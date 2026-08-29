@@ -41,8 +41,8 @@ dependencies {
     implementation "androidx.camera:camera-lifecycle:${camerax_version}"
     implementation "androidx.camera:camera-view:${camerax_version}"
 
-    // Shizuku (Grupo y versión actualizados)
-    def shizuku_version = "13.1.0"
-    implementation "dev.rikka.shizuku:api:${shizuku_version}"
-    implementation "dev.rikka.shizuku:provider:${shizuku_version}"
+    // ADB/Wireless Debugging client: manual pairing, then local shell over ADB.
+    implementation 'com.github.MuntashirAkon:libadb-android:3.1.1'
+    implementation 'com.github.MuntashirAkon:sun-security-android:1.1'
+    implementation 'org.conscrypt:conscrypt-android:2.5.3'
 }

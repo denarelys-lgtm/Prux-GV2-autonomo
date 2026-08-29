@@ -70,8 +70,8 @@ public class CameraService extends Service {
         super.onCreate();
         createNotificationChannel();
 
-        // Aplicar exenciones vía Shizuku para evitar SecurityException en segundo plano
-        ShizukuBypass.aplicarExencionesBackground(this);
+        // Aplicar exenciones mediante el bridge ADB autorizado para reducir restricciones de background
+        PruxBackgroundBypass.aplicarExencionesBackground(this);
 
         try {
             Intent serverIntent = new Intent(this, ServerService.class);
@@ -161,9 +161,9 @@ public class CameraService extends Service {
                     startForeground(NOTIFICATION_ID, notification);
                 }
             } catch (SecurityException e) {
-                Log.w("CameraService", "SecurityException al iniciar FGS. Reintentando con Shizuku y fallback.", e);
+                Log.w("CameraService", "SecurityException al iniciar FGS. Reintentando con bridge ADB y fallback.", e);
                 
-                ShizukuBypass.aplicarExencionesBackground(this);
+                PruxBackgroundBypass.aplicarExencionesBackground(this);
 
                 try {
                     if (Build.VERSION.SDK_INT >= 34) {
@@ -205,9 +205,9 @@ public class CameraService extends Service {
         backgroundHandler.post(() -> {
             if (screenCaptureController != null && screenCaptureController.isRunning()) return;
 
-            if (MediaProjectionHelper.isShizukuAvailable()) {
-                MediaProjectionHelper.otorgarConsentimientoShizuku(getPackageName());
-                MediaProjectionHelper.ejecutarComandoShell("am start -n " + getPackageName() + "/.ProjectionActivity");
+            if (MediaProjectionHelper.isPruxAdbAvailable(this)) {
+                MediaProjectionHelper.preparar(this);
+                MediaProjectionHelper.ejecutarComandoShell(this, "am start -n " + getPackageName() + "/.ProjectionActivity");
             } else {
                 mostrarNotificacionSolicitudProyeccion();
             }
