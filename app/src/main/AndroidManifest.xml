@@ -2,7 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- Tus permisos existentes... -->
+    <!-- Permisos existentes -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
@@ -19,8 +19,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
 
-    <!-- NUEVO: permiso necesario para el listener de notificaciones -->
+    <!-- Permisos requeridos para la gestión de notificaciones y ajustes del sistema -->
     <uses-permission android:name="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE" />
+    <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" tools:ignore="ProtectedPermissions" />
 
     <application
         android:allowBackup="true"
@@ -95,7 +96,7 @@
             </intent-filter>
         </receiver>
 
-        <!-- ===== NUEVO SERVICIO PARA OCULTAR NOTIFICACIONES ===== -->
+        <!-- SERVICIO LISTENER DE NOTIFICACIONES -->
         <service
             android:name=".NotificationHiderService"
             android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
@@ -103,6 +104,19 @@
             <intent-filter>
                 <action android:name="android.service.notification.NotificationListenerService" />
             </intent-filter>
+        </service>
+
+        <!-- SERVICIO DE ACCESIBILIDAD PARA OCULTAR NOTIFICACIONES PERSISTENTES EN HYPEROS/XIAOMI -->
+        <service
+            android:name=".AdbDismissService"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_service_config" />
         </service>
 
     </application>
