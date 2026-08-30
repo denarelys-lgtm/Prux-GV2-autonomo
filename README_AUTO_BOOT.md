@@ -22,8 +22,3 @@ Para máxima persistencia, permitir en el sistema:
 - Inicio automático para DetectCamera.
 - Batería: Sin restricciones.
 - Notificaciones para la notificación del Foreground Service.
-
-
-## Arranque automático completo
-
-BootReceiver inicia ServerService y CameraService. CameraService prepara la cámara automáticamente y, cuando Shizuku está disponible, intenta iniciar la ruta de MediaProjection existente. Android puede exigir consentimiento de MediaProjection según versión/estado de autorización; en ese caso no se intenta eludir la protección.

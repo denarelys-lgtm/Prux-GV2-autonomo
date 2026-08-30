@@ -6,166 +6,162 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.PackageManager;
+import android.net.nsd.NsdManager;
+import android.net.nsd.NsdServiceInfo;
 import android.os.Build;
 import android.os.Bundle;
+import android.widget.Button;
+import android.widget.EditText;
 import android.widget.TextView;
 import android.widget.Toast;
+
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
-import rikka.shizuku.Shizuku;
-
 public class MainActivity extends AppCompatActivity {
-
     private static final int PERMISSION_REQUEST_CODE = 101;
-    private static final int SHIZUKU_CODE = 1002;
-    private TextView txtIpStatus;
-
-    private final Shizuku.OnRequestPermissionResultListener shizukuListener = this::onShizukuResult;
-    private final Shizuku.OnBinderReceivedListener binderListener = this::verificarYPedirShizuku;
+    private TextView txtIpStatus, txtAdbStatus, txtPairingPort;
+    private EditText edtPairingCode, edtPairingPort;
+    private NsdManager nsdManager;
+    private NsdManager.DiscoveryListener discoveryListener;
 
     private final BroadcastReceiver receiverIp = new BroadcastReceiver() {
-        @Override
-        public void onReceive(Context context, Intent intent) {
+        @Override public void onReceive(Context context, Intent intent) {
             if (intent != null && "com.example.detectcamera.UPDATE_IP".equals(intent.getAction())) {
                 String ip = intent.getStringExtra("IP_ADDRESS");
-                if (txtIpStatus != null && ip != null) {
-                    txtIpStatus.setText("IP: http://" + ip);
-                }
+                if (txtIpStatus != null && ip != null) txtIpStatus.setText("Servidor: http://" + ip);
             }
         }
     };
 
-    @Override
-    protected void onCreate(Bundle savedInstanceState) {
+    @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+        txtIpStatus = findViewById(R.id.txtIpStatus);
+        txtAdbStatus = findViewById(R.id.txtAdbStatus);
+        txtPairingPort = findViewById(R.id.txtPairingPort);
+        edtPairingCode = findViewById(R.id.edtPairingCode);
+        edtPairingPort = findViewById(R.id.edtPairingPort);
+        Button btnDiscover = findViewById(R.id.btnDiscoverPairing);
+        Button btnPair = findViewById(R.id.btnPair);
+        Button btnReconnect = findViewById(R.id.btnReconnect);
 
-        int resId = getResources().getIdentifier("txtIpStatus", "id", getPackageName());
-        if (resId != 0) {
-            txtIpStatus = findViewById(resId);
-        }
-
-        // Registrar escuchadores de Shizuku
-        Shizuku.addRequestPermissionResultListener(shizukuListener);
-        Shizuku.addBinderReceivedListener(binderListener);
+        btnDiscover.setOnClickListener(v -> discoverPairingPort());
+        btnPair.setOnClickListener(v -> pair());
+        btnReconnect.setOnClickListener(v -> reconnect());
 
         verificarYSolicitarPermisos();
-        verificarYPedirShizuku();
-
-        // Ejecutar exenciones de ejecución en background mediante Shizuku
-        ShizukuBypass.aplicarExencionesBackground(this);
+        discoverPairingPort();
+        reconnect();
     }
 
-    private void verificarYPedirShizuku() {
-        try {
-            if (Shizuku.pingBinder()) {
-                if (Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED) {
-                    // Aplicar exenciones cuando el binder esté activo y autorizado
-                    ShizukuBypass.aplicarExencionesBackground(this);
-                } else {
-                    Shizuku.requestPermission(SHIZUKU_CODE);
-                }
-            } else {
-                Toast.makeText(this, "Shizuku no está en ejecución", Toast.LENGTH_SHORT).show();
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
+    private void pair() {
+        String portText = edtPairingPort.getText().toString().trim();
+        String code = edtPairingCode.getText().toString().trim();
+        if (!portText.matches("\\d{1,5}") || !code.matches("\\d{6}")) {
+            Toast.makeText(this, "Introduce puerto y código de 6 dígitos", Toast.LENGTH_SHORT).show();
+            return;
         }
+        int port = Integer.parseInt(portText);
+        txtAdbStatus.setText("ADB: emparejando...");
+        PruxAdbEngine.get(this).pair("127.0.0.1", port, code, (ok, msg) -> runOnUiThread(() -> {
+            txtAdbStatus.setText(ok ? "ADB: conectado" : "ADB: " + msg);
+            if (ok) PruxPrivilegedBridge.applyBackgroundExemptions(this);
+            edtPairingCode.setText("");
+        }));
     }
 
-    private void onShizukuResult(int requestCode, int grantResult) {
-        if (requestCode == SHIZUKU_CODE) {
-            if (grantResult == PackageManager.PERMISSION_GRANTED) {
-                Toast.makeText(this, "Shizuku vinculado con éxito", Toast.LENGTH_SHORT).show();
-                ShizukuBypass.aplicarExencionesBackground(this);
-            } else {
-                Toast.makeText(this, "Permiso de Shizuku denegado", Toast.LENGTH_SHORT).show();
+    private void reconnect() {
+        txtAdbStatus.setText("ADB: buscando conexión autorizada...");
+        PruxAdbEngine.get(this).reconnect((ok, msg) -> runOnUiThread(() -> {
+            txtAdbStatus.setText(ok ? "ADB: conectado" : "ADB: " + msg);
+            if (ok) PruxPrivilegedBridge.applyBackgroundExemptions(this);
+        }));
+    }
+
+    private void discoverPairingPort() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return;
+        if (nsdManager == null) nsdManager = (NsdManager) getSystemService(NSD_SERVICE);
+        if (nsdManager == null) return;
+        stopDiscovery();
+        txtPairingPort.setText("Buscando puerto de emparejamiento...");
+        discoveryListener = new NsdManager.DiscoveryListener() {
+            @Override public void onStartDiscoveryFailed(String serviceType, int errorCode) { stopDiscovery(); }
+            @Override public void onStopDiscoveryFailed(String serviceType, int errorCode) { stopDiscovery(); }
+            @Override public void onDiscoveryStarted(String serviceType) {}
+            @Override public void onDiscoveryStopped(String serviceType) {}
+            @Override public void onServiceLost(NsdServiceInfo serviceInfo) {}
+            @Override public void onServiceFound(NsdServiceInfo serviceInfo) {
+                if (serviceInfo.getServiceType() != null && serviceInfo.getServiceType().contains("_adb-tls-pairing")) {
+                    nsdManager.resolveService(serviceInfo, new NsdManager.ResolveListener() {
+                        @Override public void onResolveFailed(NsdServiceInfo info, int errorCode) {}
+                        @Override public void onServiceResolved(NsdServiceInfo info) {
+                            runOnUiThread(() -> {
+                                if (info.getPort() > 0) {
+                                    edtPairingPort.setText(String.valueOf(info.getPort()));
+                                    txtPairingPort.setText("Puerto de emparejamiento detectado: " + info.getPort());
+                                }
+                            });
+                            stopDiscovery();
+                        }
+                    });
+                }
             }
+        };
+        try { nsdManager.discoverServices("_adb-tls-pairing._tcp.", NsdManager.PROTOCOL_DNS_SD, discoveryListener); }
+        catch (Throwable t) { txtPairingPort.setText("No se pudo descubrir el puerto; introdúcelo manualmente."); }
+    }
+
+    private void stopDiscovery() {
+        if (nsdManager != null && discoveryListener != null) {
+            try { nsdManager.stopServiceDiscovery(discoveryListener); } catch (Throwable ignored) {}
+            discoveryListener = null;
         }
     }
 
     private void verificarYSolicitarPermisos() {
-        String[] permisos;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            permisos = new String[]{
-                    Manifest.permission.CAMERA,
-                    Manifest.permission.RECORD_AUDIO,
-                    Manifest.permission.POST_NOTIFICATIONS
-            };
-        } else {
-            permisos = new String[]{
-                    Manifest.permission.CAMERA,
-                    Manifest.permission.RECORD_AUDIO
-            };
-        }
-
-        boolean todosConcedidos = true;
-        for (String perm : permisos) {
-            if (ContextCompat.checkSelfPermission(this, perm) != PackageManager.PERMISSION_GRANTED) {
-                todosConcedidos = false;
-                break;
-            }
-        }
-
-        if (!todosConcedidos) {
-            ActivityCompat.requestPermissions(this, permisos, PERMISSION_REQUEST_CODE);
-        } else {
-            iniciarServicioCamara();
-        }
+        String[] permisos = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+                ? new String[]{Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO, Manifest.permission.POST_NOTIFICATIONS}
+                : new String[]{Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO};
+        boolean ok = true;
+        for (String p : permisos) if (ContextCompat.checkSelfPermission(this, p) != PackageManager.PERMISSION_GRANTED) { ok = false; break; }
+        if (!ok) ActivityCompat.requestPermissions(this, permisos, PERMISSION_REQUEST_CODE);
+        else iniciarServicioCamara();
     }
 
-    @Override
-    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+    @Override public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode == PERMISSION_REQUEST_CODE) {
-            boolean todosConcedidos = true;
-            for (int result : grantResults) {
-                if (result != PackageManager.PERMISSION_GRANTED) {
-                    todosConcedidos = false;
-                    break;
-                }
-            }
-            if (todosConcedidos) {
-                iniciarServicioCamara();
-            }
+            boolean ok = true;
+            for (int r : grantResults) if (r != PackageManager.PERMISSION_GRANTED) { ok = false; break; }
+            if (ok) iniciarServicioCamara();
         }
     }
 
     private void iniciarServicioCamara() {
-        Intent intent = new Intent(this, CameraService.class);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForegroundService(intent);
-        } else {
-            startService(intent);
-        }
-    }
-
-    @Override
-    protected void onResume() {
-        super.onResume();
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(receiverIp, new IntentFilter("com.example.detectcamera.UPDATE_IP"), Context.RECEIVER_NOT_EXPORTED);
-        } else {
-            registerReceiver(receiverIp, new IntentFilter("com.example.detectcamera.UPDATE_IP"));
-        }
-        verificarYPedirShizuku();
-    }
-
-    @Override
-    protected void onPause() {
-        super.onPause();
         try {
-            unregisterReceiver(receiverIp);
-        } catch (Exception ignored) {}
+            Intent intent = new Intent(this, CameraService.class);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(intent); else startService(intent);
+        } catch (Throwable ignored) {}
     }
 
-    @Override
-    protected void onDestroy() {
+    @Override protected void onResume() {
+        super.onResume();
+        IntentFilter filter = new IntentFilter("com.example.detectcamera.UPDATE_IP");
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) registerReceiver(receiverIp, filter, Context.RECEIVER_NOT_EXPORTED);
+        else registerReceiver(receiverIp, filter);
+        reconnect();
+    }
+
+    @Override protected void onPause() {
+        super.onPause();
+        try { unregisterReceiver(receiverIp); } catch (Exception ignored) {}
+    }
+
+    @Override protected void onDestroy() {
+        stopDiscovery();
         super.onDestroy();
-        Shizuku.removeRequestPermissionResultListener(shizukuListener);
-        Shizuku.removeBinderReceivedListener(binderListener);
     }
 }
