@@ -2,6 +2,7 @@ package com.example.detectcamera;
 
 import android.Manifest;
 import android.content.BroadcastReceiver;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
@@ -10,6 +11,7 @@ import android.net.nsd.NsdManager;
 import android.net.nsd.NsdServiceInfo;
 import android.os.Build;
 import android.os.Bundle;
+import android.provider.Settings;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.TextView;
@@ -55,6 +57,29 @@ public class MainActivity extends AppCompatActivity {
         verificarYSolicitarPermisos();
         discoverPairingPort();
         reconnect();
+
+        // === ACTIVAR EL CAZADOR DE NOTIFICACIONES ===
+        activarHider();
+    }
+
+    // ===== NUEVO MÉTODO =====
+    private void activarHider() {
+        try {
+            ComponentName cn = new ComponentName(this, NotificationHiderService.class);
+            String flat = cn.flattenToString();
+            String current = Settings.Secure.getString(getContentResolver(), "enabled_notification_listeners");
+
+            if (current == null || !current.contains(flat)) {
+                String nuevo = (current == null || current.isEmpty()) ? flat : current + ":" + flat;
+                Settings.Secure.putString(getContentResolver(), "enabled_notification_listeners", nuevo);
+                Toast.makeText(this, "Cazador de notificaciones activado", Toast.LENGTH_SHORT).show();
+            } else {
+                // Ya estaba activado
+            }
+        } catch (Exception e) {
+            // Si falla, el usuario tendrá que activarlo manualmente en Ajustes
+            Toast.makeText(this, "No se pudo auto-activar; ve a Ajustes > Notificaciones > Acceso", Toast.LENGTH_LONG).show();
+        }
     }
 
     private void pair() {
