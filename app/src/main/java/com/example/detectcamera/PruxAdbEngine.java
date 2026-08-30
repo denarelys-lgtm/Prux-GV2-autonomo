@@ -10,7 +10,6 @@ import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
 
 import io.github.muntashirakon.adb.AdbPairingRequiredException;
 import io.github.muntashirakon.adb.AdbStream;
@@ -119,7 +118,9 @@ public final class PruxAdbEngine {
                 || c.matches("dumpsys deviceidle whitelist \\+[A-Za-z0-9._]+")
                 || c.matches("appops set [A-Za-z0-9._]+ PROJECT_MEDIA allow")
                 || c.matches("pm grant [A-Za-z0-9._]+ android\\.permission\\.PROJECT_MEDIA")
-                || c.matches("am start -n [A-Za-z0-9._]+/\\.ProjectionActivity");
+                || c.matches("am start -n [A-Za-z0-9._]+/\\.ProjectionActivity")
+                || c.equals("cmd notification list")
+                || c.startsWith("cmd notification snooze");
     }
 
     private static String friendly(Throwable t) {
