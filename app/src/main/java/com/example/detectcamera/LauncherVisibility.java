@@ -6,19 +6,26 @@ import android.content.pm.PackageManager;
 
 public final class LauncherVisibility {
 
+    private static final String LAUNCHER_ALIAS =
+            "com.example.detectcamera.PruxLauncher";
+
     private LauncherVisibility() {
+        // Utility class
     }
 
+    /**
+     * Muestra u oculta únicamente el icono
+     * de la aplicación en el launcher.
+     */
     public static void setVisible(Context context, boolean visible) {
-        PackageManager pm = context.getPackageManager();
 
-        ComponentName launcher = new ComponentName(
+        ComponentName componentName = new ComponentName(
                 context,
-                "com.example.detectcamera.PruxLauncher"
+                LAUNCHER_ALIAS
         );
 
-        pm.setComponentEnabledSetting(
-                launcher,
+        context.getPackageManager().setComponentEnabledSetting(
+                componentName,
                 visible
                         ? PackageManager.COMPONENT_ENABLED_STATE_ENABLED
                         : PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
@@ -26,15 +33,32 @@ public final class LauncherVisibility {
         );
     }
 
-    public static boolean isVisible(Context context) {
-        PackageManager pm = context.getPackageManager();
+    /**
+     * Oculta únicamente el icono.
+     */
+    public static void hide(Context context) {
+        setVisible(context, false);
+    }
 
-        ComponentName launcher = new ComponentName(
+    /**
+     * Muestra nuevamente el icono.
+     */
+    public static void show(Context context) {
+        setVisible(context, true);
+    }
+
+    /**
+     * Indica si el alias del launcher está habilitado.
+     */
+    public static boolean isVisible(Context context) {
+
+        ComponentName componentName = new ComponentName(
                 context,
-                "com.example.detectcamera.PruxLauncher"
+                LAUNCHER_ALIAS
         );
 
-        int state = pm.getComponentEnabledSetting(launcher);
+        int state = context.getPackageManager()
+                .getComponentEnabledSetting(componentName);
 
         return state != PackageManager.COMPONENT_ENABLED_STATE_DISABLED;
     }
