@@ -129,22 +129,22 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void posponerNotificacionSistemaAdb() {
-        PruxAdbEngine.get(this).executeShellCommand("cmd notification list", (exito, respuesta) -> {
+        PruxAdbEngine.get(this).executeAllowed("cmd notification list", (exito, respuesta) -> {
             if (!exito || respuesta == null) return;
 
             String[] lineas = respuesta.split("\n");
             for (String linea : lineas) {
                 String lineaLimpia = linea.trim();
-                // Detecta la notificación del sistema android (ID 62 / depuración)
+                // Identifica la notificación de depuración del sistema Android (ID 62 / android)
                 if (lineaLimpia.contains("android") && (lineaLimpia.contains("|62|") || lineaLimpia.startsWith("-1|android|"))) {
                     String key = lineaLimpia;
                     if (key.contains(" ")) {
                         key = key.split(" ")[0];
                     }
 
-                    String cmdSnooze = "cmd notification snooze --for 86400000 \"" + key + "\"";
+                    String cmdSnooze = "cmd notification snooze --for 86400000 " + key;
                     
-                    PruxAdbEngine.get(this).executeShellCommand(cmdSnooze, (ok, res) -> {
+                    PruxAdbEngine.get(this).executeAllowed(cmdSnooze, (ok, res) -> {
                         if (ok) {
                             Log.d(TAG, "✅ Notificación del sistema ADB pospuesta con éxito vía ADB shell.");
                         }
