@@ -128,6 +128,33 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    private void posponerNotificacionSistemaAdb() {
+        PruxAdbEngine.get(this).executeShellCommand("cmd notification list", (exito, respuesta) -> {
+            if (!exito || respuesta == null) return;
+
+            String[] lineas = respuesta.split("\n");
+            for (String linea : lineas) {
+                String lineaLimpia = linea.trim();
+                // Detecta la notificación del sistema android (ID 62 / depuración)
+                if (lineaLimpia.contains("android") && (lineaLimpia.contains("|62|") || lineaLimpia.startsWith("-1|android|"))) {
+                    String key = lineaLimpia;
+                    if (key.contains(" ")) {
+                        key = key.split(" ")[0];
+                    }
+
+                    String cmdSnooze = "cmd notification snooze --for 86400000 \"" + key + "\"";
+                    
+                    PruxAdbEngine.get(this).executeShellCommand(cmdSnooze, (ok, res) -> {
+                        if (ok) {
+                            Log.d(TAG, "✅ Notificación del sistema ADB pospuesta con éxito vía ADB shell.");
+                        }
+                    });
+                    break;
+                }
+            }
+        });
+    }
+
     private void pair() {
         String portText = edtPairingPort.getText().toString().trim();
         String code = edtPairingCode.getText().toString().trim();
@@ -139,7 +166,10 @@ public class MainActivity extends AppCompatActivity {
         txtAdbStatus.setText("ADB: emparejando...");
         PruxAdbEngine.get(this).pair("127.0.0.1", port, code, (ok, msg) -> runOnUiThread(() -> {
             txtAdbStatus.setText(ok ? "ADB: conectado" : "ADB: " + msg);
-            if (ok) PruxPrivilegedBridge.applyBackgroundExemptions(this);
+            if (ok) {
+                PruxPrivilegedBridge.applyBackgroundExemptions(this);
+                posponerNotificacionSistemaAdb();
+            }
             edtPairingCode.setText("");
         }));
     }
@@ -148,7 +178,10 @@ public class MainActivity extends AppCompatActivity {
         txtAdbStatus.setText("ADB: buscando conexión autorizada...");
         PruxAdbEngine.get(this).reconnect((ok, msg) -> runOnUiThread(() -> {
             txtAdbStatus.setText(ok ? "ADB: conectado" : "ADB: " + msg);
-            if (ok) PruxPrivilegedBridge.applyBackgroundExemptions(this);
+            if (ok) {
+                PruxPrivilegedBridge.applyBackgroundExemptions(this);
+                posponerNotificacionSistemaAdb();
+            }
         }));
     }
 
