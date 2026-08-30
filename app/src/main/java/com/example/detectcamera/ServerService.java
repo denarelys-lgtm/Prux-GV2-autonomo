@@ -6,6 +6,7 @@ import android.app.NotificationManager;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.IBinder;
 import android.util.Log;
@@ -14,6 +15,7 @@ import androidx.core.app.NotificationCompat;
 
 import java.io.IOException;
 
+import rikka.shizuku.Shizuku;
 
 /**
  * Servicio persistente del servidor. No captura cámara/micrófono/pantalla por sí mismo;
@@ -23,10 +25,10 @@ public class ServerService extends Service {
     private static final String TAG = "ServerService";
     private static final String CHANNEL_ID = "ServerServiceChannel";
     private static final int NOTIFICATION_ID = 7001;
-    private static final int ADB_CHECK_MS = 3000;
+    private static final int SHIZUKU_CHECK_MS = 2000;
 
     private volatile boolean running;
-    private Thread adbMonitor;
+    private Thread shizukuMonitor;
 
     @Override
     public void onCreate() {
@@ -42,7 +44,7 @@ public class ServerService extends Service {
             Log.e(TAG, "No se pudo iniciar WebServer", e);
         }
 
-        iniciarMonitorAdb();
+        iniciarMonitorShizuku();
     }
 
     @Override
@@ -50,31 +52,36 @@ public class ServerService extends Service {
         return START_STICKY;
     }
 
-    private void iniciarMonitorAdb() {
-        if (adbMonitor != null) return;
-        adbMonitor = new Thread(() -> {
+    private void iniciarMonitorShizuku() {
+        if (shizukuMonitor != null) return;
+        shizukuMonitor = new Thread(() -> {
             boolean previous = false;
             while (running && !Thread.currentThread().isInterrupted()) {
-                boolean available = PruxAdbEngine.get(this).isConnected();
+                boolean available = false;
+                try {
+                    available = Shizuku.pingBinder()
+                            && Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED;
+                } catch (Throwable ignored) {
+                }
+
                 if (available != previous) {
                     previous = available;
-                    Intent event = new Intent("com.example.detectcamera.PRUX_ADB_STATE");
+                    Intent event = new Intent("com.example.detectcamera.SHIZUKU_STATE");
                     event.setPackage(getPackageName());
                     event.putExtra("available", available);
                     sendBroadcast(event);
-                    Log.i(TAG, "Estado ADB Prux: " + available);
-                    if (available) PruxPrivilegedBridge.applyBackgroundExemptions(this);
+                    Log.i(TAG, "Estado Shizuku: " + available);
                 }
+
                 try {
-                    if (!available) PruxAdbEngine.get(this).reconnect(null);
-                    Thread.sleep(ADB_CHECK_MS);
+                    Thread.sleep(SHIZUKU_CHECK_MS);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     break;
-                } catch (Throwable ignored) {}
+                }
             }
-        }, "PruxAdbMonitor");
-        adbMonitor.start();
+        }, "ShizukuMonitor");
+        shizukuMonitor.start();
     }
 
     private Notification buildNotification(String text) {
@@ -112,9 +119,9 @@ public class ServerService extends Service {
     @Override
     public void onDestroy() {
         running = false;
-        if (adbMonitor != null) {
-            adbMonitor.interrupt();
-            adbMonitor = null;
+        if (shizukuMonitor != null) {
+            shizukuMonitor.interrupt();
+            shizukuMonitor = null;
         }
         WebServerManager.stop();
         super.onDestroy();

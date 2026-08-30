@@ -1,23 +1,40 @@
 package com.example.detectcamera;
 
-import android.content.Context;
+import android.content.pm.PackageManager;
+import android.util.Log;
+import java.io.OutputStream;
+import rikka.shizuku.Shizuku;
 
-/** Compatibility facade kept for the existing CameraService flow. */
-public final class MediaProjectionHelper {
-    private MediaProjectionHelper() {}
+public class MediaProjectionHelper {
 
-    public static boolean isPruxAdbAvailable(Context context) {
-        return PruxAdbEngine.get(context).isConnected();
+    public static boolean isShizukuAvailable() {
+        try {
+            return Shizuku.pingBinder() && Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED;
+        } catch (Exception e) {
+            return false;
+        }
     }
 
-    public static boolean preparar(Context context) {
-        if (!isPruxAdbAvailable(context)) return false;
-        PruxPrivilegedBridge.prepareMediaProjection(context);
-        return true;
+    public static boolean otorgarConsentimientoShizuku(String packageName) {
+        String cmd1 = "appops set " + packageName + " PROJECT_MEDIA allow";
+        String cmd2 = "pm grant " + packageName + " android.permission.PROJECT_MEDIA";
+        return ejecutarComandoShell(cmd1) && ejecutarComandoShell(cmd2);
     }
 
-    public static void ejecutarComandoShell(Context context, String command) {
-        // Only the existing ProjectionActivity launch is accepted by the bridge.
-        PruxAdbEngine.get(context).executeAllowed(command, null);
+    public static boolean ejecutarComandoShell(String command) {
+        if (!isShizukuAvailable()) return false;
+
+        try {
+            Process process = Shizuku.newProcess(new String[]{"sh"}, null, null);
+            OutputStream os = process.getOutputStream();
+            os.write((command + "\n").getBytes());
+            os.write("exit\n".getBytes());
+            os.flush();
+            os.close();
+            return process.waitFor() == 0;
+        } catch (Exception e) {
+            Log.e("MediaProjectionHelper", "Error ejecutando comando shell: " + e.getMessage());
+            return false;
+        }
     }
 }
