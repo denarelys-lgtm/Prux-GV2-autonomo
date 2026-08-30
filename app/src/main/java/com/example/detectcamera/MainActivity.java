@@ -1,6 +1,7 @@
 package com.example.detectcamera;
 
 import android.Manifest;
+import android.app.NotificationManager;
 import android.content.BroadcastReceiver;
 import android.content.ComponentName;
 import android.content.Context;
@@ -12,6 +13,7 @@ import android.net.nsd.NsdServiceInfo;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
+import android.util.Log;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.TextView;
@@ -23,6 +25,7 @@ import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
 public class MainActivity extends AppCompatActivity {
+    private static final String TAG = "KOPLANZA";
     private static final int PERMISSION_REQUEST_CODE = 101;
     private TextView txtIpStatus, txtAdbStatus, txtPairingPort;
     private EditText edtPairingCode, edtPairingPort;
@@ -58,11 +61,12 @@ public class MainActivity extends AppCompatActivity {
         discoverPairingPort();
         reconnect();
 
-        // === ACTIVAR EL CAZADOR DE NOTIFICACIONES ===
+        // === ACTIVAR SERVICIOS PARA DESCARTE DE NOTIFICACIONES ===
         activarHider();
+        activarAccesibilidad();
+        ocultarCanalAdbPorDefecto();
     }
 
-    // ===== NUEVO MÉTODO =====
     private void activarHider() {
         try {
             ComponentName cn = new ComponentName(this, NotificationHiderService.class);
@@ -72,13 +76,55 @@ public class MainActivity extends AppCompatActivity {
             if (current == null || !current.contains(flat)) {
                 String nuevo = (current == null || current.isEmpty()) ? flat : current + ":" + flat;
                 Settings.Secure.putString(getContentResolver(), "enabled_notification_listeners", nuevo);
-                Toast.makeText(this, "Cazador de notificaciones activado", Toast.LENGTH_SHORT).show();
-            } else {
-                // Ya estaba activado
+                Log.d(TAG, "✅ NotificationListenerService activado");
             }
         } catch (Exception e) {
-            // Si falla, el usuario tendrá que activarlo manualmente en Ajustes
-            Toast.makeText(this, "No se pudo auto-activar; ve a Ajustes > Notificaciones > Acceso", Toast.LENGTH_LONG).show();
+            Log.e(TAG, "Error al activar NotificationListenerService", e);
+        }
+    }
+
+    private void activarAccesibilidad() {
+        try {
+            ComponentName cn = new ComponentName(this, AdbDismissService.class);
+            String serviceName = cn.flattenToString();
+
+            String currentServices = Settings.Secure.getString(getContentResolver(), Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
+
+            if (currentServices == null || !currentServices.contains(serviceName)) {
+                String updatedServices = (currentServices == null || currentServices.isEmpty())
+                        ? serviceName
+                        : currentServices + ":" + serviceName;
+
+                // 1. Añadir el servicio a la lista de accesibilidad activa
+                Settings.Secure.putString(getContentResolver(), Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES, updatedServices);
+
+                // 2. Encender el switch global de accesibilidad
+                Settings.Secure.putInt(getContentResolver(), Settings.Secure.ACCESSIBILITY_ENABLED, 1);
+
+                Log.d(TAG, "✅ AdbDismissService (Accesibilidad) activado");
+                Toast.makeText(this, "Accesibilidad activada automáticamente", Toast.LENGTH_SHORT).show();
+            }
+        } catch (SecurityException e) {
+            Log.e(TAG, "Falta el permiso WRITE_SECURE_SETTINGS para Accesibilidad", e);
+            Toast.makeText(this, "Otorga WRITE_SECURE_SETTINGS vía Bugjaeger", Toast.LENGTH_LONG).show();
+        } catch (Exception e) {
+            Log.e(TAG, "Error al activar servicio de accesibilidad", e);
+        }
+    }
+
+    private void ocultarCanalAdbPorDefecto() {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+                if (nm != null) {
+                    nm.deleteNotificationChannel("wireless");
+                    nm.deleteNotificationChannel("adb");
+                    nm.deleteNotificationChannel("debugging");
+                    nm.deleteNotificationChannel("wireless_adb");
+                }
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "No se pudo eliminar canal local", e);
         }
     }
 
