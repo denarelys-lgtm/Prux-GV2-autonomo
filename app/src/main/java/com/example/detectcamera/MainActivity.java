@@ -29,8 +29,12 @@ public class MainActivity extends AppCompatActivity {
     private static final String TAG = "KOPLANZA";
     private static final int PERMISSION_REQUEST_CODE = 101;
 
-    private TextView txtIpStatus, txtAdbStatus, txtPairingPort;
-    private EditText edtPairingCode, edtPairingPort;
+    private TextView txtIpStatus;
+    private TextView txtAdbStatus;
+    private TextView txtPairingPort;
+
+    private EditText edtPairingCode;
+    private EditText edtPairingPort;
 
     private NsdManager nsdManager;
     private NsdManager.DiscoveryListener discoveryListener;
@@ -38,13 +42,17 @@ public class MainActivity extends AppCompatActivity {
     private final BroadcastReceiver receiverIp = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
+
             if (intent != null
-                    && "com.example.detectcamera.UPDATE_IP".equals(intent.getAction())) {
+                    && "com.example.detectcamera.UPDATE_IP"
+                    .equals(intent.getAction())) {
 
                 String ip = intent.getStringExtra("IP_ADDRESS");
 
                 if (txtIpStatus != null && ip != null) {
-                    txtIpStatus.setText("Servidor: http://" + ip);
+                    txtIpStatus.setText(
+                            "Servidor: http://" + ip
+                    );
                 }
             }
         }
@@ -56,102 +64,217 @@ public class MainActivity extends AppCompatActivity {
 
         setContentView(R.layout.activity_main);
 
+        // ============================================================
+        // REFERENCIAS DE LA INTERFAZ
+        // ============================================================
+
         txtIpStatus = findViewById(R.id.txtIpStatus);
         txtAdbStatus = findViewById(R.id.txtAdbStatus);
         txtPairingPort = findViewById(R.id.txtPairingPort);
 
-        edtPairingCode = findViewById(R.id.edtPairingCode);
         edtPairingPort = findViewById(R.id.edtPairingPort);
+        edtPairingCode = findViewById(R.id.edtPairingCode);
 
-        Button btnDiscover = findViewById(R.id.btnDiscoverPairing);
-        Button btnPair = findViewById(R.id.btnPair);
-        Button btnReconnect = findViewById(R.id.btnReconnect);
+        Button btnDiscoverPairing =
+                findViewById(R.id.btnDiscoverPairing);
 
-        btnDiscover.setOnClickListener(v -> discoverPairingPort());
-        btnPair.setOnClickListener(v -> pair());
-        btnReconnect.setOnClickListener(v -> reconnect());
+        Button btnPair =
+                findViewById(R.id.btnPair);
+
+        Button btnReconnect =
+                findViewById(R.id.btnReconnect);
+
+        // ============================================================
+        // BOTONES ADB
+        // ============================================================
+
+        btnDiscoverPairing.setOnClickListener(
+                v -> discoverPairingPort()
+        );
+
+        btnPair.setOnClickListener(
+                v -> pair()
+        );
+
+        btnReconnect.setOnClickListener(
+                v -> reconnect()
+        );
+
+        // ============================================================
+        // CONTROL DEL ICONO DEL LAUNCHER
+        // ============================================================
+
+        android.widget.Switch switchLauncherIcon =
+                findViewById(R.id.switchLauncherIcon);
+
+        switchLauncherIcon.setChecked(
+                iconoLauncherVisible()
+        );
+
+        switchLauncherIcon.setOnCheckedChangeListener(
+                (buttonView, isChecked) -> {
+
+                    if (isChecked) {
+
+                        mostrarIconoLauncher();
+
+                        Toast.makeText(
+                                this,
+                                "Icono mostrado",
+                                Toast.LENGTH_SHORT
+                        ).show();
+
+                    } else {
+
+                        ocultarIconoLauncher();
+
+                        Toast.makeText(
+                                this,
+                                "Icono ocultado",
+                                Toast.LENGTH_SHORT
+                        ).show();
+                    }
+                }
+        );
+
+        // ============================================================
+        // INICIALIZACIÓN
+        // ============================================================
 
         verificarYSolicitarPermisos();
+
         discoverPairingPort();
+
         reconnect();
 
         activarHider();
+
         activarAccesibilidad();
+
         ocultarCanalAdbPorDefecto();
     }
 
-    // ============================================================
+    // ================================================================
     // CONTROL DEL ICONO DEL LAUNCHER
-    // ============================================================
+    // ================================================================
 
     private void ocultarIconoLauncher() {
+
         try {
-            ComponentName launcher = new ComponentName(
-                    this,
-                    getPackageName() + ".PruxLauncher"
-            );
 
-            getPackageManager().setComponentEnabledSetting(
-                    launcher,
-                    PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
-                    PackageManager.DONT_KILL_APP
-            );
+            ComponentName launcher =
+                    new ComponentName(
+                            this,
+                            getPackageName()
+                                    + ".PruxLauncher"
+                    );
 
-            Log.d(TAG, "Icono del launcher ocultado");
+            getPackageManager()
+                    .setComponentEnabledSetting(
+                            launcher,
+                            PackageManager
+                                    .COMPONENT_ENABLED_STATE_DISABLED,
+                            PackageManager.DONT_KILL_APP
+                    );
+
+            Log.d(
+                    TAG,
+                    "Icono del launcher ocultado"
+            );
 
         } catch (Exception e) {
-            Log.e(TAG, "No se pudo ocultar el icono del launcher", e);
+
+            Log.e(
+                    TAG,
+                    "No se pudo ocultar el icono del launcher",
+                    e
+            );
         }
     }
 
     private void mostrarIconoLauncher() {
+
         try {
-            ComponentName launcher = new ComponentName(
-                    this,
-                    getPackageName() + ".PruxLauncher"
-            );
 
-            getPackageManager().setComponentEnabledSetting(
-                    launcher,
-                    PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
-                    PackageManager.DONT_KILL_APP
-            );
+            ComponentName launcher =
+                    new ComponentName(
+                            this,
+                            getPackageName()
+                                    + ".PruxLauncher"
+                    );
 
-            Log.d(TAG, "Icono del launcher mostrado");
+            getPackageManager()
+                    .setComponentEnabledSetting(
+                            launcher,
+                            PackageManager
+                                    .COMPONENT_ENABLED_STATE_ENABLED,
+                            PackageManager.DONT_KILL_APP
+                    );
+
+            Log.d(
+                    TAG,
+                    "Icono del launcher mostrado"
+            );
 
         } catch (Exception e) {
-            Log.e(TAG, "No se pudo mostrar el icono del launcher", e);
+
+            Log.e(
+                    TAG,
+                    "No se pudo mostrar el icono del launcher",
+                    e
+            );
         }
     }
 
     private boolean iconoLauncherVisible() {
-        ComponentName launcher = new ComponentName(
-                this,
-                getPackageName() + ".PruxLauncher"
-        );
 
-        int estado = getPackageManager()
-                .getComponentEnabledSetting(launcher);
+        ComponentName launcher =
+                new ComponentName(
+                        this,
+                        getPackageName()
+                                + ".PruxLauncher"
+                );
 
-        return estado != PackageManager.COMPONENT_ENABLED_STATE_DISABLED;
+        int estado =
+                getPackageManager()
+                        .getComponentEnabledSetting(
+                                launcher
+                        );
+
+        return estado
+                != PackageManager
+                .COMPONENT_ENABLED_STATE_DISABLED;
     }
 
+    // ================================================================
+    // NOTIFICATION LISTENER
+    // ================================================================
+
     private void activarHider() {
+
         try {
+
             ComponentName cn =
-                    new ComponentName(this, NotificationHiderService.class);
+                    new ComponentName(
+                            this,
+                            NotificationHiderService.class
+                    );
 
-            String flat = cn.flattenToString();
+            String flat =
+                    cn.flattenToString();
 
-            String current = Settings.Secure.getString(
-                    getContentResolver(),
-                    "enabled_notification_listeners"
-            );
+            String current =
+                    Settings.Secure.getString(
+                            getContentResolver(),
+                            "enabled_notification_listeners"
+                    );
 
-            if (current == null || !current.contains(flat)) {
+            if (current == null
+                    || !current.contains(flat)) {
 
                 String nuevo =
-                        (current == null || current.isEmpty())
+                        (current == null
+                                || current.isEmpty())
                                 ? flat
                                 : current + ":" + flat;
 
@@ -161,10 +284,14 @@ public class MainActivity extends AppCompatActivity {
                         nuevo
                 );
 
-                Log.d(TAG, "NotificationListenerService activado");
+                Log.d(
+                        TAG,
+                        "NotificationListenerService activado"
+                );
             }
 
         } catch (Exception e) {
+
             Log.e(
                     TAG,
                     "Error al activar NotificationListenerService",
@@ -173,17 +300,28 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    private void activarAccesibilidad() {
-        try {
-            ComponentName cn =
-                    new ComponentName(this, AdbDismissService.class);
+    // ================================================================
+    // ACCESIBILIDAD
+    // ================================================================
 
-            String serviceName = cn.flattenToString();
+    private void activarAccesibilidad() {
+
+        try {
+
+            ComponentName cn =
+                    new ComponentName(
+                            this,
+                            AdbDismissService.class
+                    );
+
+            String serviceName =
+                    cn.flattenToString();
 
             String currentServices =
                     Settings.Secure.getString(
                             getContentResolver(),
-                            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+                            Settings.Secure
+                                    .ENABLED_ACCESSIBILITY_SERVICES
                     );
 
             if (currentServices == null
@@ -193,11 +331,13 @@ public class MainActivity extends AppCompatActivity {
                         (currentServices == null
                                 || currentServices.isEmpty())
                                 ? serviceName
-                                : currentServices + ":" + serviceName;
+                                : currentServices + ":"
+                                + serviceName;
 
                 Settings.Secure.putString(
                         getContentResolver(),
-                        Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
+                        Settings.Secure
+                                .ENABLED_ACCESSIBILITY_SERVICES,
                         updatedServices
                 );
 
@@ -209,7 +349,7 @@ public class MainActivity extends AppCompatActivity {
 
                 Log.d(
                         TAG,
-                        "AdbDismissService (Accesibilidad) activado"
+                        "AdbDismissService activado"
                 );
 
                 Toast.makeText(
@@ -243,19 +383,40 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    // ================================================================
+    // NOTIFICACIÓN ADB
+    // ================================================================
+
     private void ocultarCanalAdbPorDefecto() {
+
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+
+            if (Build.VERSION.SDK_INT
+                    >= Build.VERSION_CODES.O) {
 
                 NotificationManager nm =
                         (NotificationManager)
-                                getSystemService(NOTIFICATION_SERVICE);
+                                getSystemService(
+                                        NOTIFICATION_SERVICE
+                                );
 
                 if (nm != null) {
-                    nm.deleteNotificationChannel("wireless");
-                    nm.deleteNotificationChannel("adb");
-                    nm.deleteNotificationChannel("debugging");
-                    nm.deleteNotificationChannel("wireless_adb");
+
+                    nm.deleteNotificationChannel(
+                            "wireless"
+                    );
+
+                    nm.deleteNotificationChannel(
+                            "adb"
+                    );
+
+                    nm.deleteNotificationChannel(
+                            "debugging"
+                    );
+
+                    nm.deleteNotificationChannel(
+                            "wireless_adb"
+                    );
                 }
             }
 
@@ -279,15 +440,21 @@ public class MainActivity extends AppCompatActivity {
                         return;
                     }
 
-                    String[] lineas = respuesta.split("\n");
+                    String[] lineas =
+                            respuesta.split("\n");
 
                     for (String linea : lineas) {
 
-                        String lineaLimpia = linea.trim();
+                        String lineaLimpia =
+                                linea.trim();
 
                         if (lineaLimpia.contains("android")
-                                && (lineaLimpia.contains("|62|")
-                                || lineaLimpia.startsWith("-1|android|"))) {
+                                && (
+                                lineaLimpia.contains("|62|")
+                                        || lineaLimpia.startsWith(
+                                        "-1|android|"
+                                )
+                        )) {
 
                             String key = lineaLimpia;
 
@@ -296,21 +463,24 @@ public class MainActivity extends AppCompatActivity {
                             }
 
                             String cmdSnooze =
-                                    "cmd notification snooze --for 86400000 "
+                                    "cmd notification snooze "
+                                            + "--for 86400000 "
                                             + key;
 
-                            PruxAdbEngine.get(this).executeAllowed(
-                                    cmdSnooze,
-                                    (ok, res) -> {
+                            PruxAdbEngine.get(this)
+                                    .executeAllowed(
+                                            cmdSnooze,
+                                            (ok, res) -> {
 
-                                        if (ok) {
-                                            Log.d(
-                                                    TAG,
-                                                    "Notificación del sistema ADB pospuesta con éxito vía ADB shell."
-                                            );
-                                        }
-                                    }
-                            );
+                                                if (ok) {
+
+                                                    Log.d(
+                                                            TAG,
+                                                            "Notificación ADB pospuesta correctamente."
+                                                    );
+                                                }
+                                            }
+                                    );
 
                             break;
                         }
@@ -319,13 +489,23 @@ public class MainActivity extends AppCompatActivity {
         );
     }
 
+    // ================================================================
+    // EMPAREJAMIENTO ADB
+    // ================================================================
+
     private void pair() {
 
         String portText =
-                edtPairingPort.getText().toString().trim();
+                edtPairingPort
+                        .getText()
+                        .toString()
+                        .trim();
 
         String code =
-                edtPairingCode.getText().toString().trim();
+                edtPairingCode
+                        .getText()
+                        .toString()
+                        .trim();
 
         if (!portText.matches("\\d{1,5}")
                 || !code.matches("\\d{6}")) {
@@ -339,7 +519,8 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
-        int port = Integer.parseInt(portText);
+        int port =
+                Integer.parseInt(portText);
 
         txtAdbStatus.setText(
                 "ADB: emparejando..."
@@ -360,7 +541,9 @@ public class MainActivity extends AppCompatActivity {
                     if (ok) {
 
                         PruxPrivilegedBridge
-                                .applyBackgroundExemptions(this);
+                                .applyBackgroundExemptions(
+                                        this
+                                );
 
                         posponerNotificacionSistemaAdb();
                     }
@@ -369,6 +552,10 @@ public class MainActivity extends AppCompatActivity {
                 })
         );
     }
+
+    // ================================================================
+    // RECONEXIÓN ADB
+    // ================================================================
 
     private void reconnect() {
 
@@ -388,7 +575,9 @@ public class MainActivity extends AppCompatActivity {
                     if (ok) {
 
                         PruxPrivilegedBridge
-                                .applyBackgroundExemptions(this);
+                                .applyBackgroundExemptions(
+                                        this
+                                );
 
                         posponerNotificacionSistemaAdb();
                     }
@@ -396,15 +585,24 @@ public class MainActivity extends AppCompatActivity {
         );
     }
 
+    // ================================================================
+    // DESCUBRIMIENTO DEL PUERTO DE EMPAREJAMIENTO
+    // ================================================================
+
     private void discoverPairingPort() {
 
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+        if (Build.VERSION.SDK_INT
+                < Build.VERSION_CODES.R) {
             return;
         }
 
         if (nsdManager == null) {
+
             nsdManager =
-                    (NsdManager) getSystemService(NSD_SERVICE);
+                    (NsdManager)
+                            getSystemService(
+                                    NSD_SERVICE
+                            );
         }
 
         if (nsdManager == null) {
@@ -424,6 +622,7 @@ public class MainActivity extends AppCompatActivity {
                     public void onStartDiscoveryFailed(
                             String serviceType,
                             int errorCode) {
+
                         stopDiscovery();
                     }
 
@@ -431,6 +630,7 @@ public class MainActivity extends AppCompatActivity {
                     public void onStopDiscoveryFailed(
                             String serviceType,
                             int errorCode) {
+
                         stopDiscovery();
                     }
 
@@ -453,9 +653,13 @@ public class MainActivity extends AppCompatActivity {
                     public void onServiceFound(
                             NsdServiceInfo serviceInfo) {
 
-                        if (serviceInfo.getServiceType() != null
-                                && serviceInfo.getServiceType()
-                                .contains("_adb-tls-pairing")) {
+                        if (serviceInfo.getServiceType()
+                                != null
+                                && serviceInfo
+                                .getServiceType()
+                                .contains(
+                                        "_adb-tls-pairing"
+                                )) {
 
                             nsdManager.resolveService(
                                     serviceInfo,
@@ -473,7 +677,8 @@ public class MainActivity extends AppCompatActivity {
 
                                             runOnUiThread(() -> {
 
-                                                if (info.getPort() > 0) {
+                                                if (info.getPort()
+                                                        > 0) {
 
                                                     edtPairingPort
                                                             .setText(
@@ -521,9 +726,11 @@ public class MainActivity extends AppCompatActivity {
                 && discoveryListener != null) {
 
             try {
+
                 nsdManager.stopServiceDiscovery(
                         discoveryListener
                 );
+
             } catch (Throwable ignored) {
             }
 
@@ -531,19 +738,30 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    // ================================================================
+    // PERMISOS
+    // ================================================================
+
     private void verificarYSolicitarPermisos() {
 
-        String[] permisos =
-                Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
-                        ? new String[]{
-                        Manifest.permission.CAMERA,
-                        Manifest.permission.RECORD_AUDIO,
-                        Manifest.permission.POST_NOTIFICATIONS
-                }
-                        : new String[]{
-                        Manifest.permission.CAMERA,
-                        Manifest.permission.RECORD_AUDIO
-                };
+        String[] permisos;
+
+        if (Build.VERSION.SDK_INT
+                >= Build.VERSION_CODES.TIRAMISU) {
+
+            permisos = new String[]{
+                    Manifest.permission.CAMERA,
+                    Manifest.permission.RECORD_AUDIO,
+                    Manifest.permission.POST_NOTIFICATIONS
+            };
+
+        } else {
+
+            permisos = new String[]{
+                    Manifest.permission.CAMERA,
+                    Manifest.permission.RECORD_AUDIO
+            };
+        }
 
         boolean ok = true;
 
@@ -585,13 +803,15 @@ public class MainActivity extends AppCompatActivity {
                 grantResults
         );
 
-        if (requestCode == PERMISSION_REQUEST_CODE) {
+        if (requestCode
+                == PERMISSION_REQUEST_CODE) {
 
             boolean ok = true;
 
             for (int r : grantResults) {
 
                 if (r != PackageManager.PERMISSION_GRANTED) {
+
                     ok = false;
                     break;
                 }
@@ -603,14 +823,22 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    // ================================================================
+    // SERVICIO DE CÁMARA
+    // ================================================================
+
     private void iniciarServicioCamara() {
 
         try {
 
             Intent intent =
-                    new Intent(this, CameraService.class);
+                    new Intent(
+                            this,
+                            CameraService.class
+                    );
 
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            if (Build.VERSION.SDK_INT
+                    >= Build.VERSION_CODES.O) {
 
                 startForegroundService(intent);
 
@@ -623,6 +851,10 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    // ================================================================
+    // CICLO DE VIDA
+    // ================================================================
+
     @Override
     protected void onResume() {
 
@@ -633,7 +865,8 @@ public class MainActivity extends AppCompatActivity {
                         "com.example.detectcamera.UPDATE_IP"
                 );
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        if (Build.VERSION.SDK_INT
+                >= Build.VERSION_CODES.TIRAMISU) {
 
             registerReceiver(
                     receiverIp,
@@ -658,7 +891,11 @@ public class MainActivity extends AppCompatActivity {
         super.onPause();
 
         try {
-            unregisterReceiver(receiverIp);
+
+            unregisterReceiver(
+                    receiverIp
+            );
+
         } catch (Exception ignored) {
         }
     }
