@@ -81,7 +81,7 @@ public class MainActivity extends AppCompatActivity {
         ocultarCanalAdbPorDefecto();
 
         // === OCULTAR AUTOMÁTICAMENTE EL ICONO DEL LAUNCHER ===
-        ocultarIconoLauncher();
+        mostrarIconoLauncher();
     }
 
     // ============================================================
