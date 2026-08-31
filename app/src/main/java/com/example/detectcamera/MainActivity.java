@@ -1,4 +1,3 @@
-```java
 package com.example.detectcamera;
 
 import android.Manifest;
@@ -684,4 +683,3 @@ public class MainActivity extends AppCompatActivity {
         super.onDestroy();
     }
 }
-```
