@@ -75,19 +75,13 @@ public class MainActivity extends AppCompatActivity {
         discoverPairingPort();
         reconnect();
 
-        // === ACTIVAR SERVICIOS PARA DESCARTE DE NOTIFICACIONES ===
         activarHider();
         activarAccesibilidad();
         ocultarCanalAdbPorDefecto();
-
-        // === OCULTAR AUTOMÁTICAMENTE EL ICONO DEL LAUNCHER ===
-        mostrarIconoLauncher();
     }
 
     // ============================================================
     // CONTROL DEL ICONO DEL LAUNCHER
-    // Solo controla el icono de la aplicación.
-    // No detiene ni modifica ningún servicio.
     // ============================================================
 
     private void ocultarIconoLauncher() {
@@ -167,14 +161,10 @@ public class MainActivity extends AppCompatActivity {
                         nuevo
                 );
 
-                Log.d(
-                        TAG,
-                        "NotificationListenerService activado"
-                );
+                Log.d(TAG, "NotificationListenerService activado");
             }
 
         } catch (Exception e) {
-
             Log.e(
                     TAG,
                     "Error al activar NotificationListenerService",
@@ -233,7 +223,7 @@ public class MainActivity extends AppCompatActivity {
 
             Log.e(
                     TAG,
-                    "Falta el permiso WRITE_SECURE_SETTINGS para Accesibilidad",
+                    "Falta WRITE_SECURE_SETTINGS para Accesibilidad",
                     e
             );
 
@@ -267,8 +257,8 @@ public class MainActivity extends AppCompatActivity {
                     nm.deleteNotificationChannel("debugging");
                     nm.deleteNotificationChannel("wireless_adb");
                 }
-
             }
+
         } catch (Exception e) {
 
             Log.e(
@@ -531,11 +521,9 @@ public class MainActivity extends AppCompatActivity {
                 && discoveryListener != null) {
 
             try {
-
                 nsdManager.stopServiceDiscovery(
                         discoveryListener
                 );
-
             } catch (Throwable ignored) {
             }
 
