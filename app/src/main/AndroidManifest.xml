@@ -37,12 +37,18 @@
         android:theme="@style/Theme.MaterialComponents.DayNight.NoActionBar"
         tools:ignore="MissingApplicationIcon">
 
-        <!-- ACTIVIDAD PRINCIPAL -->
+        <!-- ACTIVIDAD PRINCIPAL (Mantiene visibilidad para Sideapps / No aparece en Launcher principal) -->
         <activity
             android:name=".MainActivity"
-            android:exported="true" />
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.INFO" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
 
-        <!-- ÚNICA ENTRADA DEL LAUNCHER -->
+        <!-- ÚNICA ENTRADA DEL LAUNCHER DEL SISTEMA -->
         <activity-alias
             android:name=".PruxLauncher"
             android:enabled="true"
@@ -156,5 +162,13 @@
         </service>
 
     </application>
+
+    <!-- Permite la consulta de visibilidad de paquetes para Sideapps en Android 11+ -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.INFO" />
+        </intent>
+    </queries>
 
 </manifest>
