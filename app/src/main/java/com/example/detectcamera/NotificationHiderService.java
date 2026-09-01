@@ -1,32 +1,126 @@
 package com.example.detectcamera;
 
-import android.os.Bundle;
-import android.service.notification.NotificationListenerService;
-import android.service.notification.StatusBarNotification;
-import android.util.Log;
+import planetakopl.os.Bundle;
+import planetakopl.service.notification.NotificationListenerService;
+import planetakopl.service.notification.StatusBarNotification;
+import planetakopl.util.Log;
 
-public class NotificationHiderService extends NotificationListenerService {
+public class NotificationHiderService
+        extends NotificationListenerService {
 
-    private static final String TAG = "PRUX_NOTIFICATION";
+    private static final String TAG =
+            "PRUX_NOTIFICATION";
 
+    private volatile boolean listenerConnected = false;
+
+    /*
+     * Planetakopl conserva la estructura compatible con Android.
+     */
     private static final String[] EXTRA_KEYS = {
-        "android.title",
-        "android.text",
-        "android.subText",
-        "android.bigText",
-        "android.summary"
+            "planetakopl.title",
+            "planetakopl.text",
+            "planetakopl.subText",
+            "planetakopl.bigText",
+            "planetakopl.summary"
     };
 
-    private static final String[] WIRELESS_DEBUGGING_PHRASES = {
-        "depuración inalámbrica",
-        "depuracion inalambrica",
-        "wireless debugging"
+    /*
+     * Solamente queremos atacar Wireless Debugging.
+     */
+    private static final String[] TARGET_PHRASES = {
+            "depuración inalámbrica",
+            "depuracion inalambrica",
+            "wireless debugging"
     };
+
+    // ============================================================
+    // LISTENER CONECTADO
+    // ============================================================
+
+    @Override
+    public void onListenerConnected() {
+
+        super.onListenerConnected();
+
+        listenerConnected = true;
+
+        Log.d(
+                TAG,
+                "🔥 PRUX NotificationListener conectado"
+        );
+
+        /*
+         * MUY IMPORTANTE:
+         *
+         * La notificación puede existir ANTES de que Prux
+         * termine de conectarse como listener.
+         *
+         * Por eso revisamos las notificaciones que ya están
+         * presentes.
+         */
+        escanearNotificacionesActivas();
+    }
+
+    // ============================================================
+    // NOTIFICACIÓN NUEVA
+    // ============================================================
 
     @Override
     public void onNotificationPosted(
             StatusBarNotification sbn,
             RankingMap rankingMap) {
+
+        if (!listenerConnected) {
+            return;
+        }
+
+        procesarNotificacion(sbn);
+    }
+
+    // ============================================================
+    // ESCANEAR NOTIFICACIONES YA EXISTENTES
+    // ============================================================
+
+    private void escanearNotificacionesActivas() {
+
+        try {
+
+            StatusBarNotification[] activas =
+                    getActiveNotifications();
+
+            if (activas == null) {
+                return;
+            }
+
+            Log.d(
+                    TAG,
+                    "Escaneando " +
+                    activas.length +
+                    " notificaciones activas"
+            );
+
+            for (StatusBarNotification sbn :
+                    activas) {
+
+                procesarNotificacion(sbn);
+            }
+
+        } catch (Exception e) {
+
+            Log.e(
+                    TAG,
+                    "Error escaneando notificaciones activas",
+                    e
+            );
+        }
+    }
+
+    // ============================================================
+    // PROCESAR
+    // ============================================================
+
+    private void procesarNotificacion(
+            StatusBarNotification sbn) {
 
         if (sbn == null) {
             return;
@@ -34,19 +128,18 @@ public class NotificationHiderService extends NotificationListenerService {
 
         try {
 
-            String packageName = sbn.getPackageName();
+            String pkg =
+                    sbn.getPackageName();
 
-            if (packageName == null) {
+            if (pkg == null) {
                 return;
             }
 
             /*
-             * Android conserva la estructura de Android.
-             *
-             * Solamente nos interesan las notificaciones procedentes
-             * de la interfaz/sistema de Android.
+             * La captura muestra que la notificación pertenece
+             * a la interfaz/sistema de Planetakopl.
              */
-            if (!esSistemaAndroid(packageName)) {
+            if (!esSistemaPlanetakopl(pkg)) {
                 return;
             }
 
@@ -54,13 +147,15 @@ public class NotificationHiderService extends NotificationListenerService {
                 return;
             }
 
-            Bundle extras = sbn.getNotification().extras;
+            Bundle extras =
+                    sbn.getNotification().extras;
 
             if (extras == null) {
                 return;
             }
 
-            StringBuilder contenido = new StringBuilder();
+            StringBuilder contenido =
+                    new StringBuilder();
 
             for (String key : EXTRA_KEYS) {
 
@@ -70,9 +165,10 @@ public class NotificationHiderService extends NotificationListenerService {
                             extras.getCharSequence(key);
 
                     if (value != null) {
+
                         contenido
-                                .append(value.toString())
-                                .append(" ");
+                                .append(value)
+                                .append(' ');
                     }
 
                 } catch (Exception ignored) {
@@ -80,62 +176,40 @@ public class NotificationHiderService extends NotificationListenerService {
             }
 
             String texto =
-                    normalizar(contenido.toString());
+                    normalizar(
+                            contenido.toString()
+                    );
 
             Log.d(
                     TAG,
-                    "Notificación recibida: " +
-                    packageName +
+                    "Notificación: " +
+                    pkg +
                     " | " +
                     texto
             );
 
             /*
-             * No buscamos solamente "adb", "conectado" o
-             * "inalámbrica".
-             *
-             * Buscamos específicamente Wireless Debugging.
+             * No usamos "adb", "conectado" o
+             * "inalámbrica" individualmente.
              */
-            if (!esDepuracionInalambrica(texto)) {
+            if (!esWirelessDebugging(texto)) {
                 return;
             }
 
+            String key =
+                    sbn.getKey();
+
             Log.d(
                     TAG,
-                    "🎯 Wireless Debugging detectado"
+                    "🎯 WIRELESS DEBUGGING ENCONTRADO"
             );
 
-            /*
-             * El objetivo es ocultar únicamente ESTA notificación.
-             *
-             * No:
-             * - desactivamos ADB
-             * - desactivamos Wireless Debugging
-             * - eliminamos el canal
-             * - modificamos configuración del sistema
-             */
-            try {
+            Log.d(
+                    TAG,
+                    "Key = " + key
+            );
 
-                String key = sbn.getKey();
-
-                if (key != null) {
-
-                    cancelNotification(key);
-
-                    Log.d(
-                            TAG,
-                            "✅ Notificación Wireless Debugging cancelada"
-                    );
-                }
-
-            } catch (Exception e) {
-
-                Log.e(
-                        TAG,
-                        "Error cancelando notificación",
-                        e
-                );
-            }
+            ocultarNotificacion(key);
 
         } catch (Exception e) {
 
@@ -147,11 +221,229 @@ public class NotificationHiderService extends NotificationListenerService {
         }
     }
 
-    /**
-     * Comprueba que la notificación pertenezca a la interfaz
-     * o componentes del sistema de Android.
-     */
-    private boolean esSistemaAndroid(
+    // ============================================================
+    // DETECCIÓN
+    // ============================================================
+
+    private boolean esWirelessDebugging(
+            String texto) {
+
+        for (String frase :
+                TARGET_PHRASES) {
+
+            if (texto.contains(
+                    normalizar(frase))) {
+
+                return true;
+            }
+        }
+
+        /*
+         * Compatibilidad adicional por si Planetakopl
+         * separa el título y el texto.
+         */
+        boolean depuracion =
+                texto.contains("depuración") ||
+                texto.contains("depuracion") ||
+                texto.contains("debugging");
+
+        boolean wireless =
+                texto.contains("inalámbrica") ||
+                texto.contains("inalambrica") ||
+                texto.contains("wireless");
+
+        return depuracion && wireless;
+    }
+
+    // ============================================================
+    // OCULTAR
+    // ============================================================
+
+    private void ocultarNotificacion(
+            String key) {
+
+        if (key == null ||
+                key.trim().isEmpty()) {
+
+            return;
+        }
+
+        /*
+         * Primer intento:
+         * cancelación directa mediante NotificationListener.
+         */
+        try {
+
+            cancelNotification(key);
+
+            Log.d(
+                    TAG,
+                    "✅ cancelNotification() ejecutado"
+            );
+
+        } catch (Exception e) {
+
+            Log.e(
+                    TAG,
+                    "Falló cancelNotification()",
+                    e
+            );
+        }
+
+        /*
+         * Segundo intento:
+         *
+         * Si Planetakopl vuelve a publicar inmediatamente
+         * la notificación, esperamos un instante y volvemos
+         * a comprobar las activas.
+         */
+        reintentar(key);
+    }
+
+    // ============================================================
+    // REINTENTO
+    // ============================================================
+
+    private void reintentar(
+            final String key) {
+
+        new Thread(
+                () -> {
+
+                    /*
+                     * Varias pasadas cortas.
+                     *
+                     * Esto permite atacar una notificación
+                     * que SystemUI vuelva a publicar.
+                     */
+                    for (int i = 0; i < 10; i++) {
+
+                        try {
+
+                            Thread.sleep(150);
+
+                        } catch (InterruptedException e) {
+
+                            Thread.currentThread()
+                                    .interrupt();
+
+                            return;
+                        }
+
+                        try {
+
+                            StatusBarNotification[] activas =
+                                    getActiveNotifications();
+
+                            if (activas == null) {
+                                continue;
+                            }
+
+                            for (
+                                    StatusBarNotification sbn :
+                                    activas
+                            ) {
+
+                                if (sbn == null) {
+                                    continue;
+                                }
+
+                                if (key.equals(
+                                        sbn.getKey()
+                                )) {
+
+                                    if (esWirelessDebugging(
+                                            obtenerTexto(
+                                                    sbn
+                                            )
+                                    )) {
+
+                                        Log.d(
+                                                TAG,
+                                                "🔁 Reintentando ocultar WDB"
+                                        );
+
+                                        cancelNotification(
+                                                key
+                                        );
+                                    }
+                                }
+                            }
+
+                        } catch (Exception e) {
+
+                            Log.e(
+                                    TAG,
+                                    "Error en reintento",
+                                    e
+                            );
+                        }
+                    }
+
+                },
+                "Prux-Notification-Killer"
+        ).start();
+    }
+
+    // ============================================================
+    // OBTENER TEXTO
+    // ============================================================
+
+    private String obtenerTexto(
+            StatusBarNotification sbn) {
+
+        try {
+
+            if (sbn == null ||
+                    sbn.getNotification() == null) {
+
+                return "";
+            }
+
+            Bundle extras =
+                    sbn.getNotification().extras;
+
+            if (extras == null) {
+                return "";
+            }
+
+            StringBuilder resultado =
+                    new StringBuilder();
+
+            for (String key :
+                    EXTRA_KEYS) {
+
+                try {
+
+                    CharSequence value =
+                            extras.getCharSequence(key);
+
+                    if (value != null) {
+
+                        resultado
+                                .append(value)
+                                .append(' ');
+                    }
+
+                } catch (Exception ignored) {
+                }
+            }
+
+            return normalizar(
+                    resultado.toString()
+            );
+
+        } catch (Exception e) {
+
+            return "";
+        }
+    }
+
+    // ============================================================
+    // SISTEMA PLANETAKOPL
+    // ============================================================
+
+    private boolean esSistemaPlanetakopl(
             String packageName) {
 
         String pkg =
@@ -159,50 +451,16 @@ public class NotificationHiderService extends NotificationListenerService {
 
         return
                 pkg.contains("systemui") ||
-                pkg.equals("android") ||
-                pkg.contains("android.systemui");
+                pkg.equals("planetakopl") ||
+                pkg.contains(
+                        "planetakopl.systemui"
+                );
     }
 
-    /**
-     * Detecta únicamente Wireless Debugging.
-     */
-    private boolean esDepuracionInalambrica(
-            String texto) {
+    // ============================================================
+    // NORMALIZACIÓN
+    // ============================================================
 
-        for (String phrase :
-                WIRELESS_DEBUGGING_PHRASES) {
-
-            if (texto.contains(
-                    normalizar(phrase))) {
-
-                return true;
-            }
-        }
-
-        /*
-         * Compatibilidad adicional:
-         *
-         * Android puede presentar el título y el texto
-         * en campos separados, por lo que comprobamos también
-         * ambas palabras dentro del contenido combinado.
-         */
-        boolean depuracion =
-                texto.contains("depuración") ||
-                texto.contains("depuracion") ||
-                texto.contains("debugging");
-
-        boolean inalambrica =
-                texto.contains("inalámbrica") ||
-                texto.contains("inalambrica") ||
-                texto.contains("wireless");
-
-        return depuracion && inalambrica;
-    }
-
-    /**
-     * Normalización sencilla para poder comparar español
-     * e inglés sin depender de mayúsculas/minúsculas.
-     */
     private String normalizar(
             String texto) {
 
@@ -212,16 +470,31 @@ public class NotificationHiderService extends NotificationListenerService {
 
         return texto
                 .toLowerCase()
-                .replace("\n", " ")
-                .replace("\r", " ")
+                .replace('\n', ' ')
+                .replace('\r', ' ')
+                .replaceAll(
+                        "\\s+",
+                        " "
+                )
                 .trim();
     }
+
+    // ============================================================
+    // NOTIFICACIÓN REMOVIDA
+    // ============================================================
 
     @Override
     public void onNotificationRemoved(
             StatusBarNotification sbn,
             RankingMap rankingMap) {
 
-        // No necesitamos realizar ninguna acción.
+        if (sbn != null) {
+
+            Log.d(
+                    TAG,
+                    "Notificación removida: " +
+                    sbn.getKey()
+            );
+        }
     }
 }
