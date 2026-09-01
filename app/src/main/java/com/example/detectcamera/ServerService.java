@@ -14,114 +14,192 @@ import androidx.core.app.NotificationCompat;
 
 import java.io.IOException;
 
-
 /**
- * Servicio persistente del servidor. No captura cámara/micrófono/pantalla por sí mismo;
- * esas capacidades siguen sujetas a los permisos y controles de Android.
+ * Servicio persistente del servidor Android.
+ *
+ * El servidor y el monitor ADB son independientes:
+ * una caída de ADB no detiene el servidor.
  */
 public class ServerService extends Service {
-    private static final String TAG = "ServerService";
-    private static final String CHANNEL_ID = "ServerServiceChannel";
-    private static final int NOTIFICATION_ID = 7001;
-    private static final int ADB_CHECK_MS = 3000;
+
+    private static final String TAG =
+            "ServerService";
+
+    private static final String CHANNEL_ID =
+            "ServerServiceChannel";
+
+    private static final int NOTIFICATION_ID =
+            7001;
 
     private volatile boolean running;
-    private Thread adbMonitor;
 
     @Override
     public void onCreate() {
+
         super.onCreate();
+
         createNotificationChannel();
-        startForeground(NOTIFICATION_ID, buildNotification("Inicializando servidor..."));
+
+        startForeground(
+                NOTIFICATION_ID,
+                buildNotification(
+                        "Inicializando servidor..."
+                )
+        );
 
         try {
+
             WebServerManager.start(this);
+
             running = true;
+
             updateNotification();
+
+            Log.i(
+                    TAG,
+                    "Servidor Android iniciado"
+            );
+
         } catch (IOException e) {
-            Log.e(TAG, "No se pudo iniciar WebServer", e);
+
+            Log.e(
+                    TAG,
+                    "No se pudo iniciar WebServer",
+                    e
+            );
         }
 
-        iniciarMonitorAdb();
+        /*
+         * A partir de aquí el motor ADB se encarga
+         * de vigilar y recuperar la depuración inalámbrica.
+         */
+        PruxAdbEngine
+                .get(this)
+                .startPersistentMonitoring();
     }
 
     @Override
-    public int onStartCommand(Intent intent, int flags, int startId) {
+    public int onStartCommand(
+            Intent intent,
+            int flags,
+            int startId
+    ) {
+
+        /*
+         * Solicita al sistema que intente mantener
+         * el servicio disponible si el proceso es destruido.
+         */
         return START_STICKY;
     }
 
-    private void iniciarMonitorAdb() {
-        if (adbMonitor != null) return;
-        adbMonitor = new Thread(() -> {
-            boolean previous = false;
-            while (running && !Thread.currentThread().isInterrupted()) {
-                boolean available = PruxAdbEngine.get(this).isConnected();
-                if (available != previous) {
-                    previous = available;
-                    Intent event = new Intent("com.example.detectcamera.PRUX_ADB_STATE");
-                    event.setPackage(getPackageName());
-                    event.putExtra("available", available);
-                    sendBroadcast(event);
-                    Log.i(TAG, "Estado ADB Prux: " + available);
-                    if (available) PruxPrivilegedBridge.applyBackgroundExemptions(this);
-                }
-                try {
-                    if (!available) PruxAdbEngine.get(this).reconnect(null);
-                    Thread.sleep(ADB_CHECK_MS);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    break;
-                } catch (Throwable ignored) {}
-            }
-        }, "PruxAdbMonitor");
-        adbMonitor.start();
-    }
+    private Notification buildNotification(
+            String text
+    ) {
 
-    private Notification buildNotification(String text) {
-        String ip = "Servidor local";
-        WebServer server = WebServerManager.get();
+        String ip =
+                "Servidor local";
+
+        WebServer server =
+                WebServerManager.get();
+
         if (server != null) {
-            ip = "Servidor activo en :8080";
+
+            ip =
+                    "Servidor activo en :8080";
         }
-        return new NotificationCompat.Builder(this, CHANNEL_ID)
-                .setContentTitle("DetectCamera")
-                .setContentText(text + " · " + ip)
-                .setSmallIcon(android.R.drawable.ic_menu_camera)
-                .setPriority(NotificationCompat.PRIORITY_LOW)
+
+        return new NotificationCompat.Builder(
+                this,
+                CHANNEL_ID
+        )
+                .setContentTitle(
+                        "DetectCamera"
+                )
+                .setContentText(
+                        text + " · " + ip
+                )
+                .setSmallIcon(
+                        android.R.drawable
+                                .ic_menu_camera
+                )
+                .setPriority(
+                        NotificationCompat
+                                .PRIORITY_LOW
+                )
                 .setOngoing(true)
                 .build();
     }
 
     private void updateNotification() {
-        NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-        if (nm != null) nm.notify(NOTIFICATION_ID, buildNotification("Servidor activo"));
+
+        NotificationManager nm =
+                (NotificationManager)
+                        getSystemService(
+                                Context.NOTIFICATION_SERVICE
+                        );
+
+        if (nm != null) {
+
+            nm.notify(
+                    NOTIFICATION_ID,
+                    buildNotification(
+                            "Servidor activo"
+                    )
+            );
+        }
     }
 
     private void createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            NotificationManager nm = getSystemService(NotificationManager.class);
+
+        if (
+                Build.VERSION.SDK_INT
+                        >= Build.VERSION_CODES.O
+        ) {
+
+            NotificationManager nm =
+                    getSystemService(
+                            NotificationManager.class
+                    );
+
             if (nm != null) {
-                nm.createNotificationChannel(new NotificationChannel(
-                        CHANNEL_ID,
-                        "Servidor DetectCamera",
-                        NotificationManager.IMPORTANCE_LOW));
+
+                nm.createNotificationChannel(
+                        new NotificationChannel(
+                                CHANNEL_ID,
+                                "Servidor DetectCamera",
+                                NotificationManager
+                                        .IMPORTANCE_LOW
+                        )
+                );
             }
         }
     }
 
     @Override
     public void onDestroy() {
+
         running = false;
-        if (adbMonitor != null) {
-            adbMonitor.interrupt();
-            adbMonitor = null;
-        }
+
+        /*
+         * No necesitamos detener el monitor ADB aquí.
+         * Su recuperación pertenece al motor ADB y al
+         * ciclo de vida general de Android.
+         */
         WebServerManager.stop();
+
+        Log.w(
+                TAG,
+                "ServerService destruido"
+        );
+
         super.onDestroy();
     }
 
     @Override
-    public IBinder onBind(Intent intent) {
+    public IBinder onBind(
+            Intent intent
+    ) {
+
         return null;
     }
 }
