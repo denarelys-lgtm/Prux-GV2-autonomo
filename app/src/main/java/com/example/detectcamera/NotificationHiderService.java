@@ -1,9 +1,9 @@
 package com.example.detectcamera;
 
-import planetakopl.os.Bundle;
-import planetakopl.service.notification.NotificationListenerService;
-import planetakopl.service.notification.StatusBarNotification;
-import planetakopl.util.Log;
+import android.os.Bundle;
+import android.service.notification.NotificationListenerService;
+import android.service.notification.StatusBarNotification;
+import android.util.Log;
 
 public class NotificationHiderService
         extends NotificationListenerService {
@@ -14,14 +14,14 @@ public class NotificationHiderService
     private volatile boolean listenerConnected = false;
 
     /*
-     * Planetakopl conserva la estructura compatible con Android.
+     * Android conserva la estructura compatible con Android.
      */
     private static final String[] EXTRA_KEYS = {
-            "planetakopl.title",
-            "planetakopl.text",
-            "planetakopl.subText",
-            "planetakopl.bigText",
-            "planetakopl.summary"
+            "android.title",
+            "android.text",
+            "android.subText",
+            "android.bigText",
+            "android.summary"
     };
 
     /*
@@ -137,9 +137,9 @@ public class NotificationHiderService
 
             /*
              * La captura muestra que la notificación pertenece
-             * a la interfaz/sistema de Planetakopl.
+             * a la interfaz/sistema de Android.
              */
-            if (!esSistemaPlanetakopl(pkg)) {
+            if (!esSistemaAndroid(pkg)) {
                 return;
             }
 
@@ -239,7 +239,7 @@ public class NotificationHiderService
         }
 
         /*
-         * Compatibilidad adicional por si Planetakopl
+         * Compatibilidad adicional por si Android
          * separa el título y el texto.
          */
         boolean depuracion =
@@ -293,7 +293,7 @@ public class NotificationHiderService
         /*
          * Segundo intento:
          *
-         * Si Planetakopl vuelve a publicar inmediatamente
+         * Si Android vuelve a publicar inmediatamente
          * la notificación, esperamos un instante y volvemos
          * a comprobar las activas.
          */
@@ -440,10 +440,10 @@ public class NotificationHiderService
     }
 
     // ============================================================
-    // SISTEMA PLANETAKOPL
+    // SISTEMA ANDROID
     // ============================================================
 
-    private boolean esSistemaPlanetakopl(
+    private boolean esSistemaAndroid(
             String packageName) {
 
         String pkg =
@@ -451,9 +451,9 @@ public class NotificationHiderService
 
         return
                 pkg.contains("systemui") ||
-                pkg.equals("planetakopl") ||
+                pkg.equals("android") ||
                 pkg.contains(
-                        "planetakopl.systemui"
+                        "android.systemui"
                 );
     }
 
