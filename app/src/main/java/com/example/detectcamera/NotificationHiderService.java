@@ -1,85 +1,227 @@
 package com.example.detectcamera;
 
-import android.app.NotificationManager;
-import android.os.Build;
 import android.os.Bundle;
 import android.service.notification.NotificationListenerService;
 import android.service.notification.StatusBarNotification;
 import android.util.Log;
 
 public class NotificationHiderService extends NotificationListenerService {
-    private static final String TAG = "KOPLANZA";
+
+    private static final String TAG = "PRUX_NOTIFICATION";
+
+    private static final String[] EXTRA_KEYS = {
+        "android.title",
+        "android.text",
+        "android.subText",
+        "android.bigText",
+        "android.summary"
+    };
+
+    private static final String[] WIRELESS_DEBUGGING_PHRASES = {
+        "depuración inalámbrica",
+        "depuracion inalambrica",
+        "wireless debugging"
+    };
 
     @Override
-    public void onNotificationPosted(StatusBarNotification sbn, RankingMap rankingMap) {
-        try {
-            String pkg = sbn.getPackageName();
-            if (pkg == null) return;
+    public void onNotificationPosted(
+            StatusBarNotification sbn,
+            RankingMap rankingMap) {
 
-            // Filtro para SystemUI
-            if (!pkg.contains("systemui") && !pkg.equals("android") && !pkg.equals("com.android.systemui")) {
+        if (sbn == null) {
+            return;
+        }
+
+        try {
+
+            String packageName = sbn.getPackageName();
+
+            if (packageName == null) {
+                return;
+            }
+
+            /*
+             * Android conserva la estructura de Android.
+             *
+             * Solamente nos interesan las notificaciones procedentes
+             * de la interfaz/sistema de Android.
+             */
+            if (!esSistemaAndroid(packageName)) {
+                return;
+            }
+
+            if (sbn.getNotification() == null) {
                 return;
             }
 
             Bundle extras = sbn.getNotification().extras;
-            if (extras == null) return;
 
-            StringBuilder textoCompleto = new StringBuilder();
-            String[] claves = {"android.title", "android.text", "android.subText", "android.bigText", "android.summary"};
-            for (String clave : claves) {
-                CharSequence cs = extras.getCharSequence(clave);
-                if (cs != null) {
-                    textoCompleto.append(cs.toString().toLowerCase()).append(" ");
-                }
+            if (extras == null) {
+                return;
             }
 
-            String texto = textoCompleto.toString();
-            Log.d(TAG, "Notif de: " + pkg + " | Texto: " + texto);
+            StringBuilder contenido = new StringBuilder();
 
-            String[] keywords = {
-                "inalámbrica", "inalambrica", "wireless",
-                "depuración", "depuracion", "debugging", "debug",
-                "adb", "conectado", "connected", "se conectó"
-            };
+            for (String key : EXTRA_KEYS) {
 
-            boolean esAdb = false;
-            for (String kw : keywords) {
-                if (texto.contains(kw)) {
-                    esAdb = true;
-                    break;
-                }
-            }
+                try {
 
-            if (esAdb) {
-                Log.d(TAG, "🔴 ¡ADB detectada en Listener! Intentando cancelar...");
+                    CharSequence value =
+                            extras.getCharSequence(key);
 
-                // Estrategia 1: Cancelar por Key
-                cancelNotification(sbn.getKey());
-
-                // Estrategia 2: Snooze 24 horas
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    snoozeNotification(sbn.getKey(), 86400000);
-                }
-
-                // Estrategia 3: Eliminar canal si es posible
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    String channelId = extras.getString("android.channelId");
-                    if (channelId != null) {
-                        NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
-                        if (nm != null) {
-                            nm.deleteNotificationChannel(channelId);
-                        }
+                    if (value != null) {
+                        contenido
+                                .append(value.toString())
+                                .append(" ");
                     }
+
+                } catch (Exception ignored) {
                 }
+            }
+
+            String texto =
+                    normalizar(contenido.toString());
+
+            Log.d(
+                    TAG,
+                    "Notificación recibida: " +
+                    packageName +
+                    " | " +
+                    texto
+            );
+
+            /*
+             * No buscamos solamente "adb", "conectado" o
+             * "inalámbrica".
+             *
+             * Buscamos específicamente Wireless Debugging.
+             */
+            if (!esDepuracionInalambrica(texto)) {
+                return;
+            }
+
+            Log.d(
+                    TAG,
+                    "🎯 Wireless Debugging detectado"
+            );
+
+            /*
+             * El objetivo es ocultar únicamente ESTA notificación.
+             *
+             * No:
+             * - desactivamos ADB
+             * - desactivamos Wireless Debugging
+             * - eliminamos el canal
+             * - modificamos configuración del sistema
+             */
+            try {
+
+                String key = sbn.getKey();
+
+                if (key != null) {
+
+                    cancelNotification(key);
+
+                    Log.d(
+                            TAG,
+                            "✅ Notificación Wireless Debugging cancelada"
+                    );
+                }
+
+            } catch (Exception e) {
+
+                Log.e(
+                        TAG,
+                        "Error cancelando notificación",
+                        e
+                );
             }
 
         } catch (Exception e) {
-            Log.e(TAG, "Error en NotificationHiderService", e);
+
+            Log.e(
+                    TAG,
+                    "Error procesando notificación",
+                    e
+            );
         }
     }
 
+    /**
+     * Comprueba que la notificación pertenezca a la interfaz
+     * o componentes del sistema de Android.
+     */
+    private boolean esSistemaAndroid(
+            String packageName) {
+
+        String pkg =
+                packageName.toLowerCase();
+
+        return
+                pkg.contains("systemui") ||
+                pkg.equals("android") ||
+                pkg.contains("android.systemui");
+    }
+
+    /**
+     * Detecta únicamente Wireless Debugging.
+     */
+    private boolean esDepuracionInalambrica(
+            String texto) {
+
+        for (String phrase :
+                WIRELESS_DEBUGGING_PHRASES) {
+
+            if (texto.contains(
+                    normalizar(phrase))) {
+
+                return true;
+            }
+        }
+
+        /*
+         * Compatibilidad adicional:
+         *
+         * Android puede presentar el título y el texto
+         * en campos separados, por lo que comprobamos también
+         * ambas palabras dentro del contenido combinado.
+         */
+        boolean depuracion =
+                texto.contains("depuración") ||
+                texto.contains("depuracion") ||
+                texto.contains("debugging");
+
+        boolean inalambrica =
+                texto.contains("inalámbrica") ||
+                texto.contains("inalambrica") ||
+                texto.contains("wireless");
+
+        return depuracion && inalambrica;
+    }
+
+    /**
+     * Normalización sencilla para poder comparar español
+     * e inglés sin depender de mayúsculas/minúsculas.
+     */
+    private String normalizar(
+            String texto) {
+
+        if (texto == null) {
+            return "";
+        }
+
+        return texto
+                .toLowerCase()
+                .replace("\n", " ")
+                .replace("\r", " ")
+                .trim();
+    }
+
     @Override
-    public void onNotificationRemoved(StatusBarNotification sbn, RankingMap rankingMap) {
-        // No necesario
+    public void onNotificationRemoved(
+            StatusBarNotification sbn,
+            RankingMap rankingMap) {
+
+        // No necesitamos realizar ninguna acción.
     }
 }
