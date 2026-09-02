@@ -5,496 +5,281 @@ import android.service.notification.NotificationListenerService;
 import android.service.notification.StatusBarNotification;
 import android.util.Log;
 
-public class NotificationHiderService
-        extends NotificationListenerService {
+/**
+ * Oculta EXCLUSIVAMENTE la notificación de "Depuración inalámbrica".
+ *
+ * IMPORTANTE:
+ * - No elimina canales.
+ * - No desactiva Wireless Debugging.
+ * - No usa snooze como mecanismo principal.
+ * - No presupone qué paquete publica la notificación.
+ * - Incluye diagnóstico para saber si el listener realmente está conectado
+ *   y si SystemUI vuelve a publicar la notificación después de cancelarla.
+ */
+public class NotificationHiderService extends NotificationListenerService {
 
-    private static final String TAG =
-            "PRUX_NOTIFICATION";
+    private static final String TAG = "PRUX_NOTIFICATION";
 
-    private volatile boolean listenerConnected = false;
-
-    /*
-     * Android conserva la estructura compatible con Android.
-     */
-    private static final String[] EXTRA_KEYS = {
+    private static final String[] ANDROID_KEYS = {
             "android.title",
             "android.text",
             "android.subText",
             "android.bigText",
-            "android.summary"
+            "android.summaryText"
     };
 
-    /*
-     * Solamente queremos atacar Wireless Debugging.
-     */
-    private static final String[] TARGET_PHRASES = {
-            "depuración inalámbrica",
-            "depuracion inalambrica",
-            "wireless debugging"
-    };
-
-    // ============================================================
-    // LISTENER CONECTADO
-    // ============================================================
+    private volatile boolean listenerConnected = false;
 
     @Override
     public void onListenerConnected() {
-
         super.onListenerConnected();
-
         listenerConnected = true;
 
-        Log.d(
-                TAG,
-                "🔥 PRUX NotificationListener conectado"
-        );
+        Log.d(TAG, "========================================");
+        Log.d(TAG, "PRUX: NotificationListener CONECTADO");
+        Log.d(TAG, "PRUX: iniciando escaneo de notificaciones activas");
+        Log.d(TAG, "========================================");
 
-        /*
-         * MUY IMPORTANTE:
-         *
-         * La notificación puede existir ANTES de que Prux
-         * termine de conectarse como listener.
-         *
-         * Por eso revisamos las notificaciones que ya están
-         * presentes.
-         */
-        escanearNotificacionesActivas();
+        escanearActivas("onListenerConnected");
     }
-
-    // ============================================================
-    // NOTIFICACIÓN NUEVA
-    // ============================================================
 
     @Override
     public void onNotificationPosted(
             StatusBarNotification sbn,
             RankingMap rankingMap) {
 
-        if (!listenerConnected) {
+        if (sbn == null) {
+            Log.w(TAG, "onNotificationPosted: sbn == null");
             return;
         }
 
-        procesarNotificacion(sbn);
+        Log.d(TAG, "onNotificationPosted recibido | conectado=" + listenerConnected);
+        procesar(sbn, "onNotificationPosted");
     }
 
-    // ============================================================
-    // ESCANEAR NOTIFICACIONES YA EXISTENTES
-    // ============================================================
-
-    private void escanearNotificacionesActivas() {
-
+    private void escanearActivas(String origen) {
         try {
-
-            StatusBarNotification[] activas =
-                    getActiveNotifications();
+            StatusBarNotification[] activas = getActiveNotifications();
 
             if (activas == null) {
+                Log.w(TAG, "getActiveNotifications() devolvió null | origen=" + origen);
                 return;
             }
 
-            Log.d(
-                    TAG,
-                    "Escaneando " +
-                    activas.length +
-                    " notificaciones activas"
-            );
+            Log.d(TAG, "Activas=" + activas.length + " | origen=" + origen);
 
-            for (StatusBarNotification sbn :
-                    activas) {
-
-                procesarNotificacion(sbn);
+            for (StatusBarNotification sbn : activas) {
+                procesar(sbn, "active:" + origen);
             }
-
-        } catch (Exception e) {
-
-            Log.e(
-                    TAG,
-                    "Error escaneando notificaciones activas",
-                    e
-            );
+        } catch (Throwable e) {
+            Log.e(TAG, "ERROR en getActiveNotifications()", e);
         }
     }
 
-    // ============================================================
-    // PROCESAR
-    // ============================================================
+    private void procesar(StatusBarNotification sbn, String origen) {
+        try {
+            if (sbn == null) return;
 
-    private void procesarNotificacion(
-            StatusBarNotification sbn) {
+            String pkg = safePackage(sbn);
+            String key = safeKey(sbn);
+            String texto = obtenerTexto(sbn);
 
-        if (sbn == null) {
+            Log.d(TAG, "----------------------------------------");
+            Log.d(TAG, "origen=" + origen);
+            Log.d(TAG, "package=" + pkg);
+            Log.d(TAG, "key=" + key);
+            Log.d(TAG, "texto=" + texto);
+            Log.d(TAG, "----------------------------------------");
+
+            // No filtramos por paquete. La frase objetivo es suficientemente específica.
+            if (!esDepuracionInalambrica(texto)) {
+                return;
+            }
+
+            Log.w(TAG, "🎯 OBJETIVO ENCONTRADO: DEPURACIÓN INALÁMBRICA");
+            Log.w(TAG, "🎯 package=" + pkg);
+            Log.w(TAG, "🎯 key=" + key);
+
+            if (key == null || key.length() == 0) {
+                Log.e(TAG, "❌ La notificación objetivo no tiene key utilizable");
+                return;
+            }
+
+            cancelarYVerificar(key);
+
+        } catch (Throwable e) {
+            Log.e(TAG, "ERROR procesando notificación", e);
+        }
+    }
+
+    private void cancelarYVerificar(final String key) {
+        try {
+            Log.w(TAG, "➡️ Ejecutando cancelNotification(" + key + ")");
+            cancelNotification(key);
+            Log.w(TAG, "⬅️ cancelNotification() regresó sin excepción");
+        } catch (Throwable e) {
+            Log.e(TAG, "❌ cancelNotification() lanzó excepción", e);
             return;
         }
 
-        try {
+        // La verificación es importante: si vuelve a aparecer, sabemos que el sistema
+        // la está republicando y no que Prux simplemente no la haya encontrado.
+        new Thread(() -> verificarCancelacion(key), "Prux-Notification-Verify").start();
+    }
 
-            String pkg =
-                    sbn.getPackageName();
+    private void verificarCancelacion(String key) {
+        final int intentos = 12;
 
-            if (pkg == null) {
+        for (int i = 1; i <= intentos; i++) {
+            try {
+                Thread.sleep(250L);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
                 return;
             }
 
-            /*
-             * La captura muestra que la notificación pertenece
-             * a la interfaz/sistema de Android.
-             */
-            if (!esSistemaAndroid(pkg)) {
-                return;
-            }
+            try {
+                StatusBarNotification[] activas = getActiveNotifications();
+                boolean sigue = false;
 
-            if (sbn.getNotification() == null) {
-                return;
-            }
-
-            Bundle extras =
-                    sbn.getNotification().extras;
-
-            if (extras == null) {
-                return;
-            }
-
-            StringBuilder contenido =
-                    new StringBuilder();
-
-            for (String key : EXTRA_KEYS) {
-
-                try {
-
-                    CharSequence value =
-                            extras.getCharSequence(key);
-
-                    if (value != null) {
-
-                        contenido
-                                .append(value)
-                                .append(' ');
+                if (activas != null) {
+                    for (StatusBarNotification sbn : activas) {
+                        if (sbn != null && key.equals(safeKey(sbn))) {
+                            sigue = true;
+                            break;
+                        }
                     }
-
-                } catch (Exception ignored) {
                 }
+
+                if (!sigue) {
+                    Log.d(TAG, "✅ VERIFICACIÓN: notificación desapareció | intento=" + i);
+                    return;
+                }
+
+                Log.w(TAG, "⚠️ VERIFICACIÓN: sigue activa | reintento=" + i);
+                cancelNotification(key);
+
+            } catch (Throwable e) {
+                Log.e(TAG, "ERROR verificando/reintentando cancelación | intento=" + i, e);
+            }
+        }
+
+        Log.e(TAG, "❌ La notificación sigue activa después de " + intentos + " intentos");
+        Log.e(TAG, "❌ Esto indica que Android/SystemUI la está rechazando o republicando.");
+    }
+
+    private String obtenerTexto(StatusBarNotification sbn) {
+        try {
+            if (sbn == null || sbn.getNotification() == null) {
+                return "";
             }
 
-            String texto =
-                    normalizar(
-                            contenido.toString()
-                    );
-
-            Log.d(
-                    TAG,
-                    "Notificación: " +
-                    pkg +
-                    " | " +
-                    texto
-            );
-
-            /*
-             * No usamos "adb", "conectado" o
-             * "inalámbrica" individualmente.
-             */
-            if (!esWirelessDebugging(texto)) {
-                return;
+            Bundle extras = sbn.getNotification().extras;
+            if (extras == null) {
+                Log.w(TAG, "Notification.extras == null | key=" + safeKey(sbn));
+                return "";
             }
 
-            String key =
-                    sbn.getKey();
+            StringBuilder texto = new StringBuilder();
 
-            Log.d(
-                    TAG,
-                    "🎯 WIRELESS DEBUGGING ENCONTRADO"
-            );
+            for (String key : ANDROID_KEYS) {
+                agregarExtra(extras, key, texto);
+            }
 
-            Log.d(
-                    TAG,
-                    "Key = " + key
-            );
+            // Diagnóstico: muestra qué extras conoce realmente Android.
+            try {
+                StringBuilder keys = new StringBuilder();
+                for (String key : extras.keySet()) {
+                    if (keys.length() > 0) keys.append(", ");
+                    keys.append(key);
+                }
+                Log.d(TAG, "extras.keys=" + keys);
+            } catch (Throwable ignored) {
+                Log.w(TAG, "No se pudieron enumerar extras.keys");
+            }
 
-            ocultarNotificacion(key);
+            return normalizar(texto.toString());
 
-        } catch (Exception e) {
-
-            Log.e(
-                    TAG,
-                    "Error procesando notificación",
-                    e
-            );
+        } catch (Throwable e) {
+            Log.e(TAG, "Error obteniendo texto de notificación", e);
+            return "";
         }
     }
 
-    // ============================================================
-    // DETECCIÓN
-    // ============================================================
-
-    private boolean esWirelessDebugging(
-            String texto) {
-
-        for (String frase :
-                TARGET_PHRASES) {
-
-            if (texto.contains(
-                    normalizar(frase))) {
-
-                return true;
+    private void agregarExtra(Bundle extras, String key, StringBuilder destino) {
+        try {
+            CharSequence cs = extras.getCharSequence(key);
+            if (cs != null) {
+                destino.append(cs).append(' ');
+                Log.d(TAG, "extra[" + key + "]=" + cs);
             }
+        } catch (Throwable e) {
+            Log.w(TAG, "No se pudo leer extra " + key);
         }
+    }
 
-        /*
-         * Compatibilidad adicional por si Android
-         * separa el título y el texto.
-         */
-        boolean depuracion =
-                texto.contains("depuración") ||
-                texto.contains("depuracion") ||
-                texto.contains("debugging");
+    private boolean esDepuracionInalambrica(String texto) {
+        String t = normalizar(texto);
 
-        boolean wireless =
-                texto.contains("inalámbrica") ||
-                texto.contains("inalambrica") ||
-                texto.contains("wireless");
+        if (t.contains("depuracion inalambrica")) return true;
+        if (t.contains("wireless debugging")) return true;
+
+        // Algunas traducciones/intermedios separan las palabras.
+        boolean depuracion = t.contains("depuracion") || t.contains("debugging");
+        boolean wireless = t.contains("inalambrica") || t.contains("wireless");
 
         return depuracion && wireless;
     }
 
-    // ============================================================
-    // OCULTAR
-    // ============================================================
-
-    private void ocultarNotificacion(
-            String key) {
-
-        if (key == null ||
-                key.trim().isEmpty()) {
-
-            return;
-        }
-
-        /*
-         * Primer intento:
-         * cancelación directa mediante NotificationListener.
-         */
+    private String safePackage(StatusBarNotification sbn) {
         try {
-
-            cancelNotification(key);
-
-            Log.d(
-                    TAG,
-                    "✅ cancelNotification() ejecutado"
-            );
-
-        } catch (Exception e) {
-
-            Log.e(
-                    TAG,
-                    "Falló cancelNotification()",
-                    e
-            );
+            String value = sbn.getPackageName();
+            return value == null ? "<null>" : value;
+        } catch (Throwable e) {
+            return "<error>";
         }
-
-        /*
-         * Segundo intento:
-         *
-         * Si Android vuelve a publicar inmediatamente
-         * la notificación, esperamos un instante y volvemos
-         * a comprobar las activas.
-         */
-        reintentar(key);
     }
 
-    // ============================================================
-    // REINTENTO
-    // ============================================================
-
-    private void reintentar(
-            final String key) {
-
-        new Thread(
-                () -> {
-
-                    /*
-                     * Varias pasadas cortas.
-                     *
-                     * Esto permite atacar una notificación
-                     * que SystemUI vuelva a publicar.
-                     */
-                    for (int i = 0; i < 10; i++) {
-
-                        try {
-
-                            Thread.sleep(150);
-
-                        } catch (InterruptedException e) {
-
-                            Thread.currentThread()
-                                    .interrupt();
-
-                            return;
-                        }
-
-                        try {
-
-                            StatusBarNotification[] activas =
-                                    getActiveNotifications();
-
-                            if (activas == null) {
-                                continue;
-                            }
-
-                            for (
-                                    StatusBarNotification sbn :
-                                    activas
-                            ) {
-
-                                if (sbn == null) {
-                                    continue;
-                                }
-
-                                if (key.equals(
-                                        sbn.getKey()
-                                )) {
-
-                                    if (esWirelessDebugging(
-                                            obtenerTexto(
-                                                    sbn
-                                            )
-                                    )) {
-
-                                        Log.d(
-                                                TAG,
-                                                "🔁 Reintentando ocultar WDB"
-                                        );
-
-                                        cancelNotification(
-                                                key
-                                        );
-                                    }
-                                }
-                            }
-
-                        } catch (Exception e) {
-
-                            Log.e(
-                                    TAG,
-                                    "Error en reintento",
-                                    e
-                            );
-                        }
-                    }
-
-                },
-                "Prux-Notification-Killer"
-        ).start();
-    }
-
-    // ============================================================
-    // OBTENER TEXTO
-    // ============================================================
-
-    private String obtenerTexto(
-            StatusBarNotification sbn) {
-
+    private String safeKey(StatusBarNotification sbn) {
         try {
-
-            if (sbn == null ||
-                    sbn.getNotification() == null) {
-
-                return "";
-            }
-
-            Bundle extras =
-                    sbn.getNotification().extras;
-
-            if (extras == null) {
-                return "";
-            }
-
-            StringBuilder resultado =
-                    new StringBuilder();
-
-            for (String key :
-                    EXTRA_KEYS) {
-
-                try {
-
-                    CharSequence value =
-                            extras.getCharSequence(key);
-
-                    if (value != null) {
-
-                        resultado
-                                .append(value)
-                                .append(' ');
-                    }
-
-                } catch (Exception ignored) {
-                }
-            }
-
-            return normalizar(
-                    resultado.toString()
-            );
-
-        } catch (Exception e) {
-
+            String value = sbn.getKey();
+            return value == null ? "" : value;
+        } catch (Throwable e) {
             return "";
         }
     }
 
-    // ============================================================
-    // SISTEMA ANDROID
-    // ============================================================
-
-    private boolean esSistemaAndroid(
-            String packageName) {
-
-        String pkg =
-                packageName.toLowerCase();
-
-        return
-                pkg.contains("systemui") ||
-                pkg.equals("android") ||
-                pkg.contains(
-                        "android.systemui"
-                );
-    }
-
-    // ============================================================
-    // NORMALIZACIÓN
-    // ============================================================
-
-    private String normalizar(
-            String texto) {
-
-        if (texto == null) {
-            return "";
-        }
+    private String normalizar(String texto) {
+        if (texto == null) return "";
 
         return texto
                 .toLowerCase()
+                .replace('á', 'a')
+                .replace('é', 'e')
+                .replace('í', 'i')
+                .replace('ó', 'o')
+                .replace('ú', 'u')
+                .replace('ü', 'u')
                 .replace('\n', ' ')
                 .replace('\r', ' ')
-                .replaceAll(
-                        "\\s+",
-                        " "
-                )
+                .replaceAll("\\s+", " ")
                 .trim();
     }
-
-    // ============================================================
-    // NOTIFICACIÓN REMOVIDA
-    // ============================================================
 
     @Override
     public void onNotificationRemoved(
             StatusBarNotification sbn,
             RankingMap rankingMap) {
 
-        if (sbn != null) {
-
-            Log.d(
-                    TAG,
-                    "Notificación removida: " +
-                    sbn.getKey()
-            );
+        if (sbn == null) {
+            Log.d(TAG, "onNotificationRemoved: sbn == null");
+            return;
         }
+
+        Log.d(TAG, "🟢 onNotificationRemoved | package="
+                + safePackage(sbn)
+                + " | key="
+                + safeKey(sbn));
     }
+
 }
