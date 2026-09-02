@@ -3,24 +3,17 @@ package com.example.detectcamera;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.provider.Settings;
 import android.util.Log;
 
 import androidx.core.content.ContextCompat;
 
 /**
  * Arranque automático de Android después del boot.
- *
- * El ajuste hidden_api_policy se intenta aplicar antes de
- * arrancar los servicios principales de la aplicación.
  */
-public class BootReceiver
-        extends BroadcastReceiver {
+public class BootReceiver extends BroadcastReceiver {
 
-    private static final String TAG =
-            "DetectCameraBoot";
-
-    private static final String HIDE_ADB_NOTIFICATION =
-            "settings put global hidden_api_policy 1";
+    private static final String TAG = "DetectCameraBoot";
 
     @Override
     public void onReceive(
@@ -32,83 +25,70 @@ public class BootReceiver
             return;
         }
 
-        String action =
-                intent.getAction();
+        String action = intent.getAction();
 
         if (
                 Intent.ACTION_BOOT_COMPLETED.equals(action)
                         ||
                 Intent.ACTION_LOCKED_BOOT_COMPLETED.equals(action)
                         ||
-                "android.intent.action.QUICKBOOT_POWERON"
-                                .equals(action)
+                "android.intent.action.QUICKBOOT_POWERON".equals(action)
         ) {
 
             Log.i(
                     TAG,
-                    "Reinicio detectado."
+                    "Reinicio detectado. Restaurando Android..."
             );
 
-            /*
-             * =====================================================
-             * 1. PREPARACIÓN DE ANDROID
-             * =====================================================
-             *
-             * Intentamos aplicar el ajuste ANTES de iniciar
-             * el monitor ADB, servidor, cámara y demás servicios.
-             */
             try {
 
-                PruxAdbEngine adb =
-                        PruxAdbEngine.get(context);
+                /*
+                 * =====================================================
+                 * 1. OCULTAR LA NOTIFICACIÓN DE WIRELESS DEBUGGING
+                 * =====================================================
+                 *
+                 * Se hace DIRECTAMENTE mediante Settings.Global.
+                 *
+                 * No usamos executeShell() aquí porque ADB todavía
+                 * podría no estar conectado en este momento.
+                 */
+                try {
 
-                adb.executeShell(
-                        HIDE_ADB_NOTIFICATION,
-                        (success, message) -> {
+                    Settings.Global.putInt(
+                            context.getContentResolver(),
+                            "hidden_api_policy",
+                            1
+                    );
 
-                            if (success) {
+                    Log.i(
+                            TAG,
+                            "hidden_api_policy establecido en 1."
+                    );
 
-                                Log.i(
-                                        TAG,
-                                        "hidden_api_policy=1 aplicado."
-                                );
+                } catch (Throwable t) {
 
-                            } else {
+                    Log.e(
+                            TAG,
+                            "No se pudo establecer hidden_api_policy.",
+                            t
+                    );
+                }
 
-                                Log.e(
-                                        TAG,
-                                        "No se pudo aplicar "
-                                                + "hidden_api_policy: "
-                                                + message
-                                );
-                            }
-                        }
-                );
 
-            } catch (Throwable t) {
-
-                Log.e(
-                        TAG,
-                        "Error preparando hidden_api_policy",
-                        t
-                );
-            }
-
-            /*
-             * =====================================================
-             * 2. MONITOR ADB
-             * =====================================================
-             */
-            try {
-
+                /*
+                 * =====================================================
+                 * 2. ARRANCAR MONITOR ADB
+                 * =====================================================
+                 */
                 PruxAdbEngine
                         .get(context)
                         .startPersistentMonitoring();
 
+
                 /*
-                 * =================================================
+                 * =====================================================
                  * 3. SERVIDOR WEB
-                 * =================================================
+                 * =====================================================
                  */
                 Intent serverIntent =
                         new Intent(
@@ -122,10 +102,11 @@ public class BootReceiver
                                 serverIntent
                         );
 
+
                 /*
-                 * =================================================
-                 * 4. CÁMARA / CAPTURA
-                 * =================================================
+                 * =====================================================
+                 * 4. CÁMARA Y CAPTURA
+                 * =====================================================
                  */
                 Intent cameraIntent =
                         new Intent(
@@ -139,9 +120,10 @@ public class BootReceiver
                                 cameraIntent
                         );
 
+
                 Log.i(
                         TAG,
-                        "Servicios Android iniciados."
+                        "Servicios Android iniciados después del boot."
                 );
 
             } catch (Throwable t) {
