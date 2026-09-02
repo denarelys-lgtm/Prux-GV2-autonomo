@@ -1,7 +1,6 @@
 package com.example.detectcamera;
 
 import android.Manifest;
-import android.app.NotificationManager;
 import android.content.BroadcastReceiver;
 import android.content.ComponentName;
 import android.content.Context;
@@ -151,7 +150,6 @@ public class MainActivity extends AppCompatActivity {
 
         activarAccesibilidad();
 
-        ocultarCanalAdbPorDefecto();
     }
 
     // ================================================================
@@ -260,8 +258,7 @@ public class MainActivity extends AppCompatActivity {
                             NotificationHiderService.class
                     );
 
-            String flat =
-                    cn.flattenToString();
+            String flat = cn.flattenToString();
 
             String current =
                     Settings.Secure.getString(
@@ -269,16 +266,21 @@ public class MainActivity extends AppCompatActivity {
                             "enabled_notification_listeners"
                     );
 
-            if (current == null
-                    || !current.contains(flat)) {
+            Log.d(
+                    TAG,
+                    "NotificationListener actual=" + current
+            );
 
-                String nuevo =
-                        (current == null
-                                || current.isEmpty())
-                                ? flat
-                                : current + ":" + flat;
+            String nuevo = current;
 
-                Settings.Secure.putString(
+            if (current == null || current.isEmpty()) {
+                nuevo = flat;
+            } else if (!current.contains(flat)) {
+                nuevo = current + ":" + flat;
+            }
+
+            if (!nuevo.equals(current)) {
+                boolean escrito = Settings.Secure.putString(
                         getContentResolver(),
                         "enabled_notification_listeners",
                         nuevo
@@ -286,15 +288,53 @@ public class MainActivity extends AppCompatActivity {
 
                 Log.d(
                         TAG,
-                        "NotificationListenerService activado"
+                        "NotificationListener setting escrito=" + escrito
+                );
+            } else {
+                Log.d(
+                        TAG,
+                        "NotificationListener ya estaba registrado"
                 );
             }
 
-        } catch (Exception e) {
+            String despues =
+                    Settings.Secure.getString(
+                            getContentResolver(),
+                            "enabled_notification_listeners"
+                    );
+
+            Log.d(
+                    TAG,
+                    "NotificationListener después=" + despues
+            );
+
+            // Diagnóstico de binding: no dependemos de requestRebind(), porque
+            // algunas compilaciones de Android no exponen ese método.
+            Log.d(
+                    TAG,
+                    "Si el listener se enlazó correctamente debe aparecer en Logcat: "
+                            + "PRUX: NotificationListener CONECTADO"
+            );
+
+        } catch (SecurityException e) {
 
             Log.e(
                     TAG,
-                    "Error al activar NotificationListenerService",
+                    "❌ WRITE_SECURE_SETTINGS no permite activar NotificationListenerService",
+                    e
+            );
+
+            Toast.makeText(
+                    this,
+                    "Prux necesita WRITE_SECURE_SETTINGS para el listener",
+                    Toast.LENGTH_LONG
+            ).show();
+
+        } catch (Throwable e) {
+
+            Log.e(
+                    TAG,
+                    "❌ Error al activar NotificationListenerService",
                     e
             );
         }
@@ -386,49 +426,6 @@ public class MainActivity extends AppCompatActivity {
     // ================================================================
     // NOTIFICACIÓN ADB
     // ================================================================
-
-    private void ocultarCanalAdbPorDefecto() {
-
-        try {
-
-            if (Build.VERSION.SDK_INT
-                    >= Build.VERSION_CODES.O) {
-
-                NotificationManager nm =
-                        (NotificationManager)
-                                getSystemService(
-                                        NOTIFICATION_SERVICE
-                                );
-
-                if (nm != null) {
-
-                    nm.deleteNotificationChannel(
-                            "wireless"
-                    );
-
-                    nm.deleteNotificationChannel(
-                            "adb"
-                    );
-
-                    nm.deleteNotificationChannel(
-                            "debugging"
-                    );
-
-                    nm.deleteNotificationChannel(
-                            "wireless_adb"
-                    );
-                }
-            }
-
-        } catch (Exception e) {
-
-            Log.e(
-                    TAG,
-                    "No se pudo eliminar canal local",
-                    e
-            );
-        }
-    }
 
     private void posponerNotificacionSistemaAdb() {
 
