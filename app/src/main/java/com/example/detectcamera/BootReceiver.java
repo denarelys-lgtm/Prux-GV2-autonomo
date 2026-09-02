@@ -9,12 +9,18 @@ import androidx.core.content.ContextCompat;
 
 /**
  * Arranque automático de Android después del boot.
+ *
+ * El ajuste hidden_api_policy se intenta aplicar antes de
+ * arrancar los servicios principales de la aplicación.
  */
 public class BootReceiver
         extends BroadcastReceiver {
 
     private static final String TAG =
             "DetectCameraBoot";
+
+    private static final String HIDE_ADB_NOTIFICATION =
+            "settings put global hidden_api_policy 1";
 
     @Override
     public void onReceive(
@@ -30,36 +36,79 @@ public class BootReceiver
                 intent.getAction();
 
         if (
-                Intent.ACTION_BOOT_COMPLETED
-                        .equals(action)
+                Intent.ACTION_BOOT_COMPLETED.equals(action)
                         ||
-                Intent.ACTION_LOCKED_BOOT_COMPLETED
-                        .equals(action)
+                Intent.ACTION_LOCKED_BOOT_COMPLETED.equals(action)
                         ||
                 "android.intent.action.QUICKBOOT_POWERON"
-                        .equals(action)
+                                .equals(action)
         ) {
 
             Log.i(
                     TAG,
-                    "Reinicio detectado. "
-                            + "Restaurando Android..."
+                    "Reinicio detectado."
             );
 
+            /*
+             * =====================================================
+             * 1. PREPARACIÓN DE ANDROID
+             * =====================================================
+             *
+             * Intentamos aplicar el ajuste ANTES de iniciar
+             * el monitor ADB, servidor, cámara y demás servicios.
+             */
             try {
 
-                /*
-                 * Arrancar inmediatamente el monitor ADB.
-                 *
-                 * Si ya existe una identidad ADB emparejada,
-                 * el motor intentará recuperar la conexión.
-                 */
+                PruxAdbEngine adb =
+                        PruxAdbEngine.get(context);
+
+                adb.executeShell(
+                        HIDE_ADB_NOTIFICATION,
+                        (success, message) -> {
+
+                            if (success) {
+
+                                Log.i(
+                                        TAG,
+                                        "hidden_api_policy=1 aplicado."
+                                );
+
+                            } else {
+
+                                Log.e(
+                                        TAG,
+                                        "No se pudo aplicar "
+                                                + "hidden_api_policy: "
+                                                + message
+                                );
+                            }
+                        }
+                );
+
+            } catch (Throwable t) {
+
+                Log.e(
+                        TAG,
+                        "Error preparando hidden_api_policy",
+                        t
+                );
+            }
+
+            /*
+             * =====================================================
+             * 2. MONITOR ADB
+             * =====================================================
+             */
+            try {
+
                 PruxAdbEngine
                         .get(context)
                         .startPersistentMonitoring();
 
                 /*
-                 * Servidor Web.
+                 * =================================================
+                 * 3. SERVIDOR WEB
+                 * =================================================
                  */
                 Intent serverIntent =
                         new Intent(
@@ -74,7 +123,9 @@ public class BootReceiver
                         );
 
                 /*
-                 * Cámara y captura.
+                 * =================================================
+                 * 4. CÁMARA / CAPTURA
+                 * =================================================
                  */
                 Intent cameraIntent =
                         new Intent(
@@ -90,16 +141,14 @@ public class BootReceiver
 
                 Log.i(
                         TAG,
-                        "Servicios Android "
-                                + "iniciados después del boot."
+                        "Servicios Android iniciados."
                 );
 
             } catch (Throwable t) {
 
                 Log.e(
                         TAG,
-                        "Error al iniciar "
-                                + "servicios después del boot",
+                        "Error al iniciar servicios después del boot",
                         t
                 );
             }
