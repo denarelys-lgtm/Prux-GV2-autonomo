@@ -46,11 +46,6 @@ public class BootReceiver extends BroadcastReceiver {
                  * =====================================================
                  * 1. OCULTAR LA NOTIFICACIÓN DE WIRELESS DEBUGGING
                  * =====================================================
-                 *
-                 * Se hace DIRECTAMENTE mediante Settings.Global.
-                 *
-                 * No usamos executeShell() aquí porque ADB todavía
-                 * podría no estar conectado en este momento.
                  */
                 try {
 
@@ -77,12 +72,18 @@ public class BootReceiver extends BroadcastReceiver {
 
                 /*
                  * =====================================================
-                 * 2. ARRANCAR MONITOR ADB
+                 * 2. ARRANCAR MONITOR Y FORZAR RECONEXIÓN ADB
                  * =====================================================
                  */
                 PruxAdbEngine
                         .get(context)
                         .startPersistentMonitoring();
+
+                new Thread(() -> {
+                    int port = AdbPortResolver.enableAndGetWirelessPort();
+                    Log.i(TAG, "Puerto ADB asignado en el arranque: " + port);
+                    PruxAdbEngine.get(context).reconnect(null);
+                }).start();
 
 
                 /*
