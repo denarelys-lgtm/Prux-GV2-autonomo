@@ -292,7 +292,7 @@ public final class PruxAdbEngine {
             boolean ok = false;
 
             if (activePort > 0) {
-                ok = manager.connect("127.0.0.1", activePort, 5000);
+                ok = manager.connect("127.0.0.1", activePort);
             }
 
             if (!ok) {
@@ -410,7 +410,7 @@ public final class PruxAdbEngine {
                     boolean connectedNow = false;
 
                     if (activePort > 0) {
-                        connectedNow = manager.connect("127.0.0.1", activePort, 5000);
+                        connectedNow = manager.connect("127.0.0.1", activePort);
                     }
 
                     if (!connectedNow) {
@@ -484,7 +484,7 @@ public final class PruxAdbEngine {
                                 .getInstance(context);
 
                 if (activePort > 0) {
-                    ok = manager.connect("127.0.0.1", activePort, 5000);
+                    ok = manager.connect("127.0.0.1", activePort);
                 }
 
                 if (!ok) {
@@ -582,7 +582,7 @@ public final class PruxAdbEngine {
                     boolean recovered = false;
 
                     if (activePort > 0) {
-                        recovered = manager.connect("127.0.0.1", activePort, 5000);
+                        recovered = manager.connect("127.0.0.1", activePort);
                     }
 
                     if (!recovered) {
