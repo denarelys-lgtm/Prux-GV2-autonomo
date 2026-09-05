@@ -24,7 +24,7 @@ import io.github.muntashirakon.adb.AbsAdbConnectionManager;
  *
  * Funciones:
  * - Emparejamiento explícito.
- * - Reconexión automática.
+ * - Reconexión automática con resolución de puerto por Binder.
  * - Monitor persistente.
  * - Detección de pérdida de conexión.
  * - Backoff progresivo para evitar conexiones simultáneas.
@@ -165,9 +165,6 @@ public final class PruxAdbEngine {
 
     /**
      * Comprueba que el transporte ADB sigue funcionando.
-     *
-     * No mantiene un socket permanente abierto.
-     * Comprueba periódicamente que una sesión ADB pueda abrirse.
      */
     private boolean performHeartbeat() {
 
@@ -279,21 +276,31 @@ public final class PruxAdbEngine {
     }
 
     /**
-     * Intenta recuperar una conexión ADB previamente emparejada.
+     * Intenta recuperar una conexión ADB previamente emparejada consultando Binder.
      */
     private void doReconnect() {
 
         try {
 
+            int activePort = AdbPortResolver.enableAndGetWirelessPort();
+            Log.i(TAG, "Puerto ADB detectado desde Binder: " + activePort);
+
             AbsAdbConnectionManager manager =
                     PruxAdbConnectionManager
                             .getInstance(context);
 
-            boolean ok =
-                    manager.autoConnect(
-                            context,
-                            5000
-                    );
+            boolean ok = false;
+
+            if (activePort > 0) {
+                ok = manager.connect("127.0.0.1", activePort, 5000);
+            }
+
+            if (!ok) {
+                ok = manager.autoConnect(
+                        context,
+                        5000
+                );
+            }
 
             connected = ok;
 
@@ -304,7 +311,7 @@ public final class PruxAdbEngine {
 
                 Log.i(
                         TAG,
-                        "ADB inalámbrico reconectado"
+                        "ADB inalámbrico reconectado en puerto " + activePort
                 );
 
                 notifyAdbState(true);
@@ -313,8 +320,10 @@ public final class PruxAdbEngine {
 
                 Log.w(
                         TAG,
-                        "ADB todavía no disponible"
+                        "ADB todavía no disponible en el puerto " + activePort
                 );
+
+                notifyAdbState(false);
             }
 
         } catch (AdbPairingRequiredException e) {
@@ -397,11 +406,16 @@ public final class PruxAdbEngine {
 
                 if (ok) {
 
-                    boolean connectedNow =
-                            manager.autoConnect(
-                                    context,
-                                    5000
-                            );
+                    int activePort = AdbPortResolver.enableAndGetWirelessPort();
+                    boolean connectedNow = false;
+
+                    if (activePort > 0) {
+                        connectedNow = manager.connect("127.0.0.1", activePort, 5000);
+                    }
+
+                    if (!connectedNow) {
+                        connectedNow = manager.autoConnect(context, 5000);
+                    }
 
                     connected =
                             connectedNow;
@@ -463,15 +477,22 @@ public final class PruxAdbEngine {
 
             try {
 
+                int activePort = AdbPortResolver.enableAndGetWirelessPort();
+
                 AbsAdbConnectionManager manager =
                         PruxAdbConnectionManager
                                 .getInstance(context);
 
-                ok =
-                        manager.autoConnect(
-                                context,
-                                5000
-                        );
+                if (activePort > 0) {
+                    ok = manager.connect("127.0.0.1", activePort, 5000);
+                }
+
+                if (!ok) {
+                    ok = manager.autoConnect(
+                            context,
+                            5000
+                    );
+                }
 
                 connected =
                         ok;
@@ -482,7 +503,7 @@ public final class PruxAdbEngine {
                             FIRST_RECONNECT_DELAY_MS;
 
                     message =
-                            "ADB conectado";
+                            "ADB conectado en el puerto " + activePort;
 
                     notifyAdbState(true);
 
@@ -555,17 +576,18 @@ public final class PruxAdbEngine {
                         PruxAdbConnectionManager
                                 .getInstance(context);
 
-                /*
-                 * Si ADB se perdió, intentamos recuperarlo
-                 * antes de ejecutar el comando.
-                 */
                 if (!connected) {
 
-                    boolean recovered =
-                            manager.autoConnect(
-                                    context,
-                                    5000
-                            );
+                    int activePort = AdbPortResolver.enableAndGetWirelessPort();
+                    boolean recovered = false;
+
+                    if (activePort > 0) {
+                        recovered = manager.connect("127.0.0.1", activePort, 5000);
+                    }
+
+                    if (!recovered) {
+                        recovered = manager.autoConnect(context, 5000);
+                    }
 
                     connected =
                             recovered;
@@ -669,7 +691,7 @@ public final class PruxAdbEngine {
     }
 
     /**
-     * Lista blanca de comandos que Android permite ejecutar.
+     * Lista blanca de comandos aprobados.
      */
     private static boolean isAllowed(
             String command
