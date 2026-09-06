@@ -8,24 +8,12 @@ import android.util.Log;
 import androidx.core.content.ContextCompat;
 
 /**
- * Arranque autónomo de Prux.
- *
- * Después del boot:
- *
- * ADB Wireless
- *      ↓
- * recuperación
- *      ↓
- * servidor
- *      ↓
- * cámara
- *
- * El usuario no necesita abrir MainActivity.
+ * Arranque automático de Prux después del reinicio.
  */
 public class BootReceiver extends BroadcastReceiver {
 
     private static final String TAG =
-            "PruxBootReceiver";
+            "DetectCameraBoot";
 
     @Override
     public void onReceive(
@@ -40,19 +28,18 @@ public class BootReceiver extends BroadcastReceiver {
         String action =
                 intent.getAction();
 
-        boolean boot =
-                Intent.ACTION_BOOT_COMPLETED.equals(
+        if (
+                !Intent.ACTION_BOOT_COMPLETED.equals(
                         action
                 )
-                ||
-                Intent.ACTION_LOCKED_BOOT_COMPLETED.equals(
+                &&
+                !Intent.ACTION_LOCKED_BOOT_COMPLETED.equals(
                         action
                 )
-                ||
-                "android.intent.action.QUICKBOOT_POWERON"
-                        .equals(action);
-
-        if (!boot) {
+                &&
+                !"android.intent.action.QUICKBOOT_POWERON"
+                        .equals(action)
+        ) {
             return;
         }
 
@@ -61,165 +48,76 @@ public class BootReceiver extends BroadcastReceiver {
                 "Boot detectado. Iniciando Prux..."
         );
 
-        final Context appContext =
-                context.getApplicationContext();
-
-        /*
-         * =========================================================
-         * ADB
-         * =========================================================
-         */
-
         try {
 
-            PruxAdbEngine engine =
-                    PruxAdbEngine.get(
-                            appContext
-                    );
-
             /*
-             * El monitor se inicia una sola vez.
+             * =====================================================
+             * 1. MOTOR ADB
+             * =====================================================
+             *
+             * El motor se queda monitorizando permanentemente.
+             *
+             * No hacemos aquí otra llamada independiente a
+             * AdbPortResolver para evitar dos procesos intentando
+             * conectar simultáneamente.
              */
+            PruxAdbEngine engine =
+                    PruxAdbEngine.get(context);
+
             engine.startPersistentMonitoring();
 
             /*
-             * Activamos/recuperamos ADB en segundo plano.
+             * Primera conexión inmediatamente después del boot.
              */
-            new Thread(
-                    () -> {
+            engine.reconnect(null);
 
-                        try {
 
-                            int port =
-                                    AdbPortResolver
-                                            .enableAndGetWirelessPort();
-
-                            Log.i(
-                                    TAG,
-                                    "ADB Wireless inicializado. Puerto=" +
-                                            port
-                            );
-
-                            if (port > 0) {
-
-                                PruxAdbState.saveEndpoint(
-                                        appContext,
-                                        "127.0.0.1",
-                                        port
-                                );
-                            }
-
-                            /*
-                             * Si ya existe pairing,
-                             * intenta reconectar.
-                             */
-                            if (
-                                    PruxAdbState.isPaired(
-                                            appContext
-                                    )
-                            ) {
-
-                                engine.reconnect(null);
-
-                            } else {
-
-                                Log.i(
-                                        TAG,
-                                        "Prux todavía no está emparejada."
-                                );
-                            }
-
-                        } catch (Throwable t) {
-
-                            Log.e(
-                                    TAG,
-                                    "Error recuperando ADB",
-                                    t
-                            );
-                        }
-
-                    },
-                    "Prux-Boot-ADB"
-            ).start();
-
-        } catch (Throwable t) {
-
-            Log.e(
-                    TAG,
-                    "No se pudo iniciar el motor ADB",
-                    t
-            );
-        }
-
-        /*
-         * =========================================================
-         * SERVIDOR WEB
-         * =========================================================
-         */
-
-        try {
-
+            /*
+             * =====================================================
+             * 2. SERVIDOR WEB
+             * =====================================================
+             */
             Intent serverIntent =
                     new Intent(
-                            appContext,
+                            context,
                             ServerService.class
                     );
 
             ContextCompat.startForegroundService(
-                    appContext,
+                    context,
                     serverIntent
             );
 
-            Log.i(
-                    TAG,
-                    "Servidor iniciado."
-            );
 
-        } catch (Throwable t) {
-
-            Log.e(
-                    TAG,
-                    "No se pudo iniciar servidor",
-                    t
-            );
-        }
-
-        /*
-         * =========================================================
-         * CÁMARA
-         * =========================================================
-         */
-
-        try {
-
+            /*
+             * =====================================================
+             * 3. CÁMARA / AUDIO / CAPTURA
+             * =====================================================
+             */
             Intent cameraIntent =
                     new Intent(
-                            appContext,
+                            context,
                             CameraService.class
                     );
 
             ContextCompat.startForegroundService(
-                    appContext,
+                    context,
                     cameraIntent
             );
 
+
             Log.i(
                     TAG,
-                    "Servicio de cámara iniciado."
+                    "Servicios de Prux iniciados correctamente."
             );
 
         } catch (Throwable t) {
 
             Log.e(
                     TAG,
-                    "No se pudo iniciar cámara",
+                    "Error iniciando Prux después del boot",
                     t
             );
         }
-
-        Log.i(
-                TAG,
-                "Prux restaurada después del boot."
-        );
     }
 }
