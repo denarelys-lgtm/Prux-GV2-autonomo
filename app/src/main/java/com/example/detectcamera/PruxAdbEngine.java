@@ -19,25 +19,6 @@ import io.github.muntashirakon.adb.AdbPairingRequiredException;
 import io.github.muntashirakon.adb.AdbStream;
 import io.github.muntashirakon.adb.AbsAdbConnectionManager;
 
-/**
- * Núcleo ADB de Prux.
- *
- * Arquitectura:
- *
- * ACTIVAR
- *   ↓
- * DESCUBRIR
- *   ↓
- * PAIRING
- *   ↓
- * IDENTIDAD PERSISTENTE
- *   ↓
- * CONEXIÓN
- *   ↓
- * HEARTBEAT
- *   ↓
- * RECUPERACIÓN AUTOMÁTICA
- */
 public final class PruxAdbEngine {
 
     private static final String TAG =
@@ -52,6 +33,9 @@ public final class PruxAdbEngine {
     private static final long HEALTH_CHECK_MS =
             10000L;
 
+    private static final long COMMAND_TIMEOUT_MS =
+            7000L;
+
     private static volatile PruxAdbEngine instance;
 
     private final Context context;
@@ -61,12 +45,12 @@ public final class PruxAdbEngine {
 
     private final ScheduledExecutorService monitor =
             Executors.newSingleThreadScheduledExecutor(
-                    runnable -> {
+                    r -> {
 
                         Thread thread =
                                 new Thread(
-                                        runnable,
-                                        "Prux-ADB-Monitor"
+                                        r,
+                                        "Android-ADB-Monitor"
                                 );
 
                         thread.setDaemon(true);
@@ -81,15 +65,15 @@ public final class PruxAdbEngine {
     private final AtomicBoolean reconnectRunning =
             new AtomicBoolean(false);
 
-    private volatile boolean connected =
-            false;
+    private volatile boolean connected;
 
     private volatile long reconnectDelay =
             FIRST_RECONNECT_DELAY_MS;
 
-    private PruxAdbEngine(
-            Context context
-    ) {
+    private volatile int lastKnownPort =
+            -1;
+
+    private PruxAdbEngine(Context context) {
 
         this.context =
                 context.getApplicationContext();
@@ -101,7 +85,9 @@ public final class PruxAdbEngine {
 
         if (instance == null) {
 
-            synchronized (PruxAdbEngine.class) {
+            synchronized (
+                    PruxAdbEngine.class
+            ) {
 
                 if (instance == null) {
 
@@ -120,12 +106,13 @@ public final class PruxAdbEngine {
         return connected;
     }
 
-    /*
-     * =============================================================
-     * MONITOR
-     * =============================================================
-     */
+    public int getLastKnownPort() {
+        return lastKnownPort;
+    }
 
+    /**
+     * Arranca un único monitor persistente.
+     */
     public void startPersistentMonitoring() {
 
         if (
@@ -139,7 +126,7 @@ public final class PruxAdbEngine {
 
         Log.i(
                 TAG,
-                "Monitor ADB iniciado."
+                "Monitor persistente ADB iniciado"
         );
 
         monitor.scheduleWithFixedDelay(
@@ -169,18 +156,12 @@ public final class PruxAdbEngine {
                         "Heartbeat falló."
                 );
 
-                connected =
-                        false;
-
-                notifyAdbState(false);
+                markDisconnected();
             }
 
             requestReconnect();
 
         } catch (Throwable t) {
-
-            connected =
-                    false;
 
             Log.e(
                     TAG,
@@ -188,26 +169,27 @@ public final class PruxAdbEngine {
                     t
             );
 
-            notifyAdbState(false);
+            markDisconnected();
 
             requestReconnect();
         }
     }
 
+    /**
+     * Heartbeat real contra el transporte ADB.
+     */
     private boolean performHeartbeat() {
 
         try {
 
             AbsAdbConnectionManager manager =
                     PruxAdbConnectionManager
-                            .getInstance(
-                                    context
-                            );
+                            .getInstance(context);
 
             try (
                     AdbStream stream =
                             manager.openStream(
-                                    "shell:echo PRUX_OK"
+                                    "shell:echo android"
                             )
             ) {
 
@@ -221,7 +203,7 @@ public final class PruxAdbEngine {
 
                 long deadline =
                         System.currentTimeMillis()
-                                + 2500L;
+                                + 2000L;
 
                 while (
                         System.currentTimeMillis()
@@ -233,34 +215,26 @@ public final class PruxAdbEngine {
                         String line =
                                 reader.readLine();
 
-                        return line != null
-                                && line.contains(
-                                "PRUX_OK"
-                        );
+                        return line != null;
                     }
 
                     Thread.sleep(20L);
                 }
 
+                return false;
             }
 
         } catch (Throwable t) {
 
             Log.w(
                     TAG,
-                    "Heartbeat no disponible: " +
-                            friendly(t)
+                    "Heartbeat falló: "
+                            + friendly(t)
             );
+
+            return false;
         }
-
-        return false;
     }
-
-    /*
-     * =============================================================
-     * RECUPERACIÓN
-     * =============================================================
-     */
 
     private void requestReconnect() {
 
@@ -286,14 +260,9 @@ public final class PruxAdbEngine {
                 () -> {
 
                     try {
-
                         doReconnect();
-
                     } finally {
-
-                        reconnectRunning.set(
-                                false
-                        );
+                        reconnectRunning.set(false);
                     }
 
                 },
@@ -302,226 +271,103 @@ public final class PruxAdbEngine {
         );
     }
 
+    /**
+     * Recupera una conexión ya emparejada.
+     */
     private void doReconnect() {
 
         try {
-
-            Log.i(
-                    TAG,
-                    "Intentando recuperar ADB..."
-            );
 
             int port =
                     AdbPortResolver
                             .enableAndGetWirelessPort();
 
+            if (port > 0) {
+                lastKnownPort = port;
+            }
+
             AbsAdbConnectionManager manager =
                     PruxAdbConnectionManager
-                            .getInstance(
-                                    context
-                            );
+                            .getInstance(context);
 
-            boolean ok =
-                    connectBest(
-                            manager,
-                            port
-                    );
+            boolean ok = false;
 
-            connected =
-                    ok;
+            /*
+             * Primero utilizamos el puerto detectado.
+             */
+            if (port > 0) {
+
+                ok =
+                        manager.connect(
+                                "127.0.0.1",
+                                port
+                        );
+            }
+
+            /*
+             * Si no funciona, dejamos que la biblioteca
+             * encuentre la conexión emparejada.
+             */
+            if (!ok) {
+
+                ok =
+                        manager.autoConnect(
+                                context,
+                                5000
+                        );
+            }
 
             if (ok) {
+
+                connected = true;
 
                 reconnectDelay =
                         FIRST_RECONNECT_DELAY_MS;
 
-                if (port > 0) {
-
-                    PruxAdbState.saveEndpoint(
-                            context,
-                            "127.0.0.1",
-                            port
-                    );
-                }
-
                 Log.i(
                         TAG,
-                        "ADB recuperado."
+                        "ADB conectado. Puerto="
+                                + port
                 );
 
                 notifyAdbState(true);
 
             } else {
 
+                markDisconnected();
+
                 Log.w(
                         TAG,
                         "ADB todavía no disponible."
                 );
-
-                notifyAdbState(false);
             }
 
         } catch (
                 AdbPairingRequiredException e
         ) {
 
-            connected =
-                    false;
+            markDisconnected();
 
             Log.w(
                     TAG,
-                    "ADB requiere pairing."
+                    "ADB requiere emparejamiento."
             );
-
-            notifyAdbState(false);
 
         } catch (Throwable t) {
 
-            connected =
-                    false;
+            markDisconnected();
 
             Log.e(
                     TAG,
-                    "Recuperación ADB fallida",
+                    "Reconexión fallida",
                     t
             );
-
-            notifyAdbState(false);
         }
     }
 
     /**
-     * Intenta primero el último endpoint conocido,
-     * después el puerto recién detectado y finalmente
-     * autodiscovery.
+     * Emparejamiento inicial.
      */
-    private boolean connectBest(
-            AbsAdbConnectionManager manager,
-            int detectedPort
-    ) {
-
-        /*
-         * ---------------------------------------------------------
-         * Último endpoint guardado
-         * ---------------------------------------------------------
-         */
-
-        try {
-
-            String lastHost =
-                    PruxAdbState.getLastHost(
-                            context
-                    );
-
-            int lastPort =
-                    PruxAdbState.getLastPort(
-                            context
-                    );
-
-            if (
-                    lastHost != null
-                            &&
-                            lastPort > 0
-            ) {
-
-                Log.i(
-                        TAG,
-                        "Probando último endpoint: " +
-                                lastHost +
-                                ":" +
-                                lastPort
-                );
-
-                if (
-                        manager.connect(
-                                lastHost,
-                                lastPort
-                        )
-                ) {
-
-                    return true;
-                }
-            }
-
-        } catch (Throwable t) {
-
-            Log.w(
-                    TAG,
-                    "Último endpoint no disponible."
-            );
-        }
-
-        /*
-         * ---------------------------------------------------------
-         * Puerto detectado
-         * ---------------------------------------------------------
-         */
-
-        if (detectedPort > 0) {
-
-            try {
-
-                if (
-                        manager.connect(
-                                "127.0.0.1",
-                                detectedPort
-                        )
-                ) {
-
-                    PruxAdbState.saveEndpoint(
-                            context,
-                            "127.0.0.1",
-                            detectedPort
-                    );
-
-                    return true;
-                }
-
-            } catch (Throwable t) {
-
-                Log.w(
-                        TAG,
-                        "Conexión local fallida."
-                );
-            }
-        }
-
-        /*
-         * ---------------------------------------------------------
-         * Autodiscovery
-         * ---------------------------------------------------------
-         */
-
-        try {
-
-            if (
-                    manager.autoConnect(
-                            context,
-                            5000
-                    )
-            ) {
-
-                return true;
-            }
-
-        } catch (Throwable t) {
-
-            Log.w(
-                    TAG,
-                    "Autodiscovery falló: " +
-                            friendly(t)
-            );
-        }
-
-        return false;
-    }
-
-    /*
-     * =============================================================
-     * PAIRING
-     * =============================================================
-     */
-
     public void pair(
             String host,
             int port,
@@ -529,576 +375,513 @@ public final class PruxAdbEngine {
             Callback callback
     ) {
 
-        executor.execute(
-                () -> {
+        executor.execute(() -> {
 
-                    boolean ok =
-                            false;
+            boolean success =
+                    false;
 
-                    String message;
+            String message;
 
-                    try {
+            try {
 
-                        if (
-                                Build.VERSION.SDK_INT
-                                        < Build.VERSION_CODES.R
-                        ) {
+                if (
+                        Build.VERSION.SDK_INT
+                                < Build.VERSION_CODES.R
+                ) {
 
-                            throw new IllegalStateException(
-                                    "Wireless Debugging requiere Android 11+."
-                            );
-                        }
+                    throw new IllegalStateException(
+                            "Wireless Debugging requiere Android 11+"
+                    );
+                }
 
-                        if (
-                                host == null
-                                        ||
-                                        host.trim().isEmpty()
-                        ) {
+                if (
+                        host == null
+                                || host.trim().isEmpty()
+                ) {
 
-                            host =
-                                    "127.0.0.1";
-                        }
+                    throw new IllegalArgumentException(
+                            "Host inválido"
+                    );
+                }
 
-                        if (port <= 0) {
+                if (
+                        port < 1
+                                || port > 65535
+                ) {
 
-                            throw new IllegalArgumentException(
-                                    "Puerto de pairing inválido."
-                            );
-                        }
+                    throw new IllegalArgumentException(
+                            "Puerto inválido"
+                    );
+                }
 
-                        if (
-                                code == null
-                                        ||
-                                        !code.matches(
-                                                "\\d{6}"
-                                        )
-                        ) {
+                if (
+                        code == null
+                                || !code.matches(
+                                "\\d{6}"
+                        )
+                ) {
 
-                            throw new IllegalArgumentException(
-                                    "El código debe contener 6 dígitos."
-                            );
-                        }
+                    throw new IllegalArgumentException(
+                            "El código debe tener 6 dígitos"
+                    );
+                }
 
-                        AbsAdbConnectionManager manager =
-                                PruxAdbConnectionManager
-                                        .getInstance(
-                                                context
-                                        );
+                AbsAdbConnectionManager manager =
+                        PruxAdbConnectionManager
+                                .getInstance(context);
 
-                        Log.i(
-                                TAG,
-                                "Iniciando pairing en " +
-                                        host +
-                                        ":" +
-                                        port
+                Log.i(
+                        TAG,
+                        "Iniciando pairing "
+                                + host
+                                + ":"
+                                + port
+                );
+
+                success =
+                        manager.pair(
+                                host,
+                                port,
+                                code
                         );
 
-                        ok =
-                                manager.pair(
-                                        host,
-                                        port,
-                                        code
-                                );
+                if (!success) {
 
-                        if (!ok) {
+                    message =
+                            "El emparejamiento fue rechazado";
 
-                            message =
-                                    "El emparejamiento fue rechazado.";
-
-                        } else {
-
-                            /*
-                             * El pairing fue exitoso.
-                             * Guardamos el estado.
-                             */
-                            PruxAdbState.markPaired(
-                                    context,
-                                    true
-                            );
-
-                            PruxAdbState.saveEndpoint(
-                                    context,
-                                    host,
-                                    port
-                            );
-
-                            message =
-                                    "Emparejamiento ADB completado.";
-
-                            /*
-                             * Ahora buscamos el puerto real
-                             * de conexión.
-                             */
-                            int activePort =
-                                    AdbPortResolver
-                                            .getWirelessPort();
-
-                            boolean connectedNow =
-                                    connectBest(
-                                            manager,
-                                            activePort
-                                    );
-
-                            connected =
-                                    connectedNow;
-
-                            if (connectedNow) {
-
-                                reconnectDelay =
-                                        FIRST_RECONNECT_DELAY_MS;
-
-                                if (
-                                        activePort > 0
-                                ) {
-
-                                    PruxAdbState
-                                            .saveEndpoint(
-                                                    context,
-                                                    "127.0.0.1",
-                                                    activePort
-                                            );
-                                }
-
-                                message +=
-                                        " · ADB conectado.";
-
-                                notifyAdbState(
-                                        true
-                                );
-
-                            } else {
-
-                                message +=
-                                        " · Emparejado; esperando conexión.";
-
-                                notifyAdbState(
-                                        false
-                                );
-                            }
-
-                            startPersistentMonitoring();
-                        }
-
-                    } catch (Throwable t) {
-
-                        message =
-                                friendly(t);
-
-                        Log.e(
-                                TAG,
-                                "Error en pairing",
-                                t
-                        );
-                    }
+                    notifyAdbState(false);
 
                     post(
                             callback,
-                            ok,
+                            false,
                             message
                     );
+
+                    return;
                 }
-        );
+
+                /*
+                 * Pairing completado.
+                 */
+                Log.i(
+                        TAG,
+                        "Pairing completado."
+                );
+
+                /*
+                 * Ahora intentamos conexión inmediata.
+                 */
+                int activePort =
+                        AdbPortResolver
+                                .enableAndGetWirelessPort();
+
+                if (activePort > 0) {
+                    lastKnownPort = activePort;
+                }
+
+                boolean connectedNow =
+                        false;
+
+                if (activePort > 0) {
+
+                    connectedNow =
+                            manager.connect(
+                                    "127.0.0.1",
+                                    activePort
+                            );
+                }
+
+                if (!connectedNow) {
+
+                    connectedNow =
+                            manager.autoConnect(
+                                    context,
+                                    5000
+                            );
+                }
+
+                if (connectedNow) {
+
+                    connected = true;
+
+                    reconnectDelay =
+                            FIRST_RECONNECT_DELAY_MS;
+
+                    notifyAdbState(true);
+
+                    message =
+                            "Emparejamiento completado y ADB conectado";
+
+                } else {
+
+                    connected = false;
+
+                    notifyAdbState(false);
+
+                    message =
+                            "Emparejamiento completado; esperando conexión ADB";
+                }
+
+                startPersistentMonitoring();
+
+            } catch (Throwable t) {
+
+                connected = false;
+
+                message =
+                        friendly(t);
+
+                Log.e(
+                        TAG,
+                        "Error durante pairing",
+                        t
+                );
+
+                notifyAdbState(false);
+            }
+
+            post(
+                    callback,
+                    success,
+                    message
+            );
+        });
     }
 
-    /*
-     * =============================================================
-     * RECONNECT MANUAL
-     * =============================================================
+    /**
+     * Reconexión manual.
      */
-
     public void reconnect(
             Callback callback
     ) {
 
         startPersistentMonitoring();
 
-        executor.execute(
-                () -> {
+        executor.execute(() -> {
 
-                    boolean ok =
-                            false;
+            boolean success =
+                    false;
 
-                    String message;
+            String message;
 
-                    try {
+            try {
 
-                        int port =
-                                AdbPortResolver
-                                        .enableAndGetWirelessPort();
+                int port =
+                        AdbPortResolver
+                                .enableAndGetWirelessPort();
 
-                        AbsAdbConnectionManager manager =
-                                PruxAdbConnectionManager
-                                        .getInstance(
-                                                context
-                                        );
+                if (port > 0) {
+                    lastKnownPort = port;
+                }
 
-                        ok =
-                                connectBest(
-                                        manager,
-                                        port
-                                );
+                AbsAdbConnectionManager manager =
+                        PruxAdbConnectionManager
+                                .getInstance(context);
 
-                        connected =
-                                ok;
+                if (port > 0) {
 
-                        if (ok) {
-
-                            reconnectDelay =
-                                    FIRST_RECONNECT_DELAY_MS;
-
-                            if (port > 0) {
-
-                                PruxAdbState
-                                        .saveEndpoint(
-                                                context,
-                                                "127.0.0.1",
-                                                port
-                                        );
-                            }
-
-                            message =
-                                    "ADB conectado.";
-
-                            notifyAdbState(
-                                    true
+                    success =
+                            manager.connect(
+                                    "127.0.0.1",
+                                    port
                             );
+                }
 
-                        } else {
+                if (!success) {
 
-                            message =
-                                    PruxAdbState
-                                            .isPaired(
-                                                    context
-                                            )
-                                            ?
-                                            "Emparejado pero ADB no está disponible."
-                                            :
-                                            "No existe un pairing ADB.";
-
-                            notifyAdbState(
-                                    false
+                    success =
+                            manager.autoConnect(
+                                    context,
+                                    5000
                             );
-                        }
+                }
 
-                    } catch (
-                            AdbPairingRequiredException e
-                    ) {
+                if (success) {
 
-                        connected =
-                                false;
+                    connected = true;
 
-                        message =
-                                "Se requiere emparejamiento manual.";
+                    reconnectDelay =
+                            FIRST_RECONNECT_DELAY_MS;
 
-                        notifyAdbState(
-                                false
-                        );
+                    message =
+                            "ADB conectado";
 
-                    } catch (Throwable t) {
-
-                        connected =
-                                false;
-
-                        message =
-                                friendly(t);
-
-                        Log.e(
-                                TAG,
-                                "Error reconectando",
-                                t
-                        );
-
-                        notifyAdbState(
-                                false
-                        );
+                    if (port > 0) {
+                        message +=
+                                " en el puerto " + port;
                     }
 
-                    post(
-                            callback,
-                            ok,
-                            message
-                    );
+                    notifyAdbState(true);
+
+                } else {
+
+                    markDisconnected();
+
+                    message =
+                            "No se encontró una conexión ADB emparejada";
                 }
-        );
+
+            } catch (
+                    AdbPairingRequiredException e
+            ) {
+
+                markDisconnected();
+
+                message =
+                        "Se requiere emparejamiento manual";
+
+            } catch (Throwable t) {
+
+                markDisconnected();
+
+                message =
+                        friendly(t);
+
+                Log.e(
+                        TAG,
+                        "reconnect",
+                        t
+                );
+            }
+
+            post(
+                    callback,
+                    success,
+                    message
+            );
+        });
     }
 
-    /*
-     * =============================================================
-     * EJECUCIÓN PRIVILEGIADA
-     * =============================================================
+    /**
+     * Ejecuta un comando de la lista blanca.
      */
-
     public void executeAllowed(
             String command,
             Callback callback
     ) {
 
-        executor.execute(
-                () -> {
+        executor.execute(() -> {
 
-                    boolean ok =
-                            false;
+            boolean success =
+                    false;
 
-                    String output =
-                            "";
+            String output = "";
 
-                    try {
+            try {
 
-                        if (
-                                command == null
-                                        ||
-                                        !isAllowed(
-                                                command
-                                        )
-                        ) {
+                if (!isAllowed(command)) {
 
-                            throw new SecurityException(
-                                    "Comando no permitido por Prux."
-                            );
-                        }
-
-                        AbsAdbConnectionManager manager =
-                                PruxAdbConnectionManager
-                                        .getInstance(
-                                                context
-                                        );
-
-                        /*
-                         * Si no hay conexión,
-                         * Prux intenta recuperarla.
-                         */
-                        if (!connected) {
-
-                            int port =
-                                    AdbPortResolver
-                                            .enableAndGetWirelessPort();
-
-                            boolean recovered =
-                                    connectBest(
-                                            manager,
-                                            port
-                                    );
-
-                            connected =
-                                    recovered;
-
-                            if (!recovered) {
-
-                                throw new IllegalStateException(
-                                        "ADB no conectado."
-                                );
-                            }
-
-                            notifyAdbState(
-                                    true
-                            );
-                        }
-
-                        try (
-                                AdbStream stream =
-                                        manager.openStream(
-                                                "shell:" +
-                                                        command
-                                        )
-                        ) {
-
-                            BufferedReader reader =
-                                    new BufferedReader(
-                                            new InputStreamReader(
-                                                    stream.openInputStream(),
-                                                    StandardCharsets.UTF_8
-                                            )
-                                    );
-
-                            StringBuilder result =
-                                    new StringBuilder();
-
-                            long deadline =
-                                    System.currentTimeMillis()
-                                            + 10000L;
-
-                            while (
-                                    System.currentTimeMillis()
-                                            < deadline
-                            ) {
-
-                                if (
-                                        reader.ready()
-                                ) {
-
-                                    String line =
-                                            reader.readLine();
-
-                                    if (
-                                            line == null
-                                    ) {
-                                        break;
-                                    }
-
-                                    result
-                                            .append(line)
-                                            .append('\n');
-
-                                } else {
-
-                                    Thread.sleep(
-                                            20L
-                                    );
-                                }
-                            }
-
-                            output =
-                                    result.toString();
-
-                            ok =
-                                    true;
-                        }
-
-                    } catch (Throwable t) {
-
-                        connected =
-                                false;
-
-                        output =
-                                friendly(t);
-
-                        Log.e(
-                                TAG,
-                                "executeAllowed: " +
-                                        command,
-                                t
-                        );
-
-                        notifyAdbState(
-                                false
-                        );
-
-                        requestReconnect();
-                    }
-
-                    post(
-                            callback,
-                            ok,
-                            output
+                    throw new SecurityException(
+                            "Comando no permitido por Prux"
                     );
                 }
-        );
+
+                AbsAdbConnectionManager manager =
+                        PruxAdbConnectionManager
+                                .getInstance(context);
+
+                /*
+                 * Recuperación automática antes del comando.
+                 */
+                if (!connected) {
+
+                    int port =
+                            AdbPortResolver
+                                    .enableAndGetWirelessPort();
+
+                    boolean recovered =
+                            false;
+
+                    if (port > 0) {
+
+                        lastKnownPort = port;
+
+                        recovered =
+                                manager.connect(
+                                        "127.0.0.1",
+                                        port
+                                );
+                    }
+
+                    if (!recovered) {
+
+                        recovered =
+                                manager.autoConnect(
+                                        context,
+                                        5000
+                                );
+                    }
+
+                    if (!recovered) {
+
+                        throw new IllegalStateException(
+                                "ADB no conectado"
+                        );
+                    }
+
+                    connected = true;
+
+                    reconnectDelay =
+                            FIRST_RECONNECT_DELAY_MS;
+
+                    notifyAdbState(true);
+                }
+
+                output =
+                        executeShell(
+                                manager,
+                                command
+                        );
+
+                success = true;
+
+            } catch (Throwable t) {
+
+                output =
+                        friendly(t);
+
+                markDisconnected();
+
+                Log.e(
+                        TAG,
+                        "executeAllowed: "
+                                + command,
+                        t
+                );
+
+                requestReconnect();
+            }
+
+            post(
+                    callback,
+                    success,
+                    output
+            );
+        });
     }
 
-    /*
-     * =============================================================
-     * LISTA BLANCA
-     * =============================================================
-     */
+    private String executeShell(
+            AbsAdbConnectionManager manager,
+            String command
+    ) throws Exception {
 
+        try (
+                AdbStream stream =
+                        manager.openStream(
+                                "shell:" + command
+                        )
+        ) {
+
+            BufferedReader reader =
+                    new BufferedReader(
+                            new InputStreamReader(
+                                    stream.openInputStream(),
+                                    StandardCharsets.UTF_8
+                            )
+                    );
+
+            StringBuilder output =
+                    new StringBuilder();
+
+            long deadline =
+                    System.currentTimeMillis()
+                            + COMMAND_TIMEOUT_MS;
+
+            while (
+                    System.currentTimeMillis()
+                            < deadline
+            ) {
+
+                if (reader.ready()) {
+
+                    String line =
+                            reader.readLine();
+
+                    if (line == null) {
+                        break;
+                    }
+
+                    output
+                            .append(line)
+                            .append('\n');
+
+                } else {
+
+                    Thread.sleep(20L);
+                }
+            }
+
+            return output.toString();
+        }
+    }
+
+    /**
+     * Lista blanca.
+     */
     private static boolean isAllowed(
             String command
     ) {
 
         if (
-                command == null ||
-                command.trim().isEmpty()
+                command == null
+                        || command.trim().isEmpty()
         ) {
-
             return false;
         }
 
         String c =
                 command.trim();
 
-        /*
-         * AppOps.
-         */
-        if (
-                c.matches(
-                        "cmd appops set [A-Za-z0-9._]+ " +
-                                "(RUN_IN_BACKGROUND|" +
-                                "RUN_ANY_IN_BACKGROUND|" +
-                                "START_FOREGROUND) allow"
-                )
-        ) {
+        return c.matches(
+                "cmd appops set [A-Za-z0-9._]+ "
+                        + "(RUN_IN_BACKGROUND|"
+                        + "RUN_ANY_IN_BACKGROUND|"
+                        + "START_FOREGROUND) allow"
+        )
 
-            return true;
-        }
+                || c.matches(
+                "dumpsys deviceidle whitelist "
+                        + "\\+[A-Za-z0-9._]+"
+        )
 
-        /*
-         * Doze whitelist.
-         */
-        if (
-                c.matches(
-                        "dumpsys deviceidle whitelist " +
-                                "\\+[A-Za-z0-9._]+"
-                )
-        ) {
+                || c.matches(
+                "appops set [A-Za-z0-9._]+ "
+                        + "PROJECT_MEDIA allow"
+        )
 
-            return true;
-        }
+                || c.matches(
+                "pm grant [A-Za-z0-9._]+ "
+                        + "android\\.permission\\.PROJECT_MEDIA"
+        )
 
-        /*
-         * MediaProjection.
-         */
-        if (
-                c.matches(
-                        "appops set [A-Za-z0-9._]+ " +
-                                "PROJECT_MEDIA allow"
-                )
-        ) {
+                || c.matches(
+                "am start -n [A-Za-z0-9._]+/"
+                        + "\\.ProjectionActivity"
+        )
 
-            return true;
-        }
+                || c.equals(
+                "cmd notification list"
+        )
 
-        if (
-                c.matches(
-                        "pm grant [A-Za-z0-9._]+ " +
-                                "android\\.permission\\.PROJECT_MEDIA"
-                )
-        ) {
-
-            return true;
-        }
-
-        /*
-         * ProjectionActivity.
-         */
-        if (
-                c.matches(
-                        "am start -n [A-Za-z0-9._]+/" +
-                                "\\.ProjectionActivity"
-                )
-        ) {
-
-            return true;
-        }
-
-        /*
-         * Notificaciones.
-         */
-        if (
-                c.equals(
-                        "cmd notification list"
-                )
-        ) {
-
-            return true;
-        }
-
-        if (
-                c.startsWith(
-                        "cmd notification snooze"
-                )
-        ) {
-
-            return true;
-        }
-
-        return false;
+                || c.matches(
+                "cmd notification snooze .*"
+        );
     }
 
-    /*
-     * =============================================================
-     * ESTADO
-     * =============================================================
-     */
+    private void markDisconnected() {
+
+        boolean wasConnected =
+                connected;
+
+        connected = false;
+
+        if (wasConnected) {
+            notifyAdbState(false);
+        } else {
+            notifyAdbState(false);
+        }
+    }
 
     private void notifyAdbState(
             boolean state
@@ -1106,49 +889,40 @@ public final class PruxAdbEngine {
 
         try {
 
-            Intent intent =
+            Intent event =
                     new Intent(
                             "com.example.detectcamera.PRUX_ADB_STATE"
                     );
 
-            intent.setPackage(
+            event.setPackage(
                     context.getPackageName()
             );
 
-            intent.putExtra(
+            event.putExtra(
                     "available",
                     state
             );
 
-            context.sendBroadcast(
-                    intent
-            );
+            context.sendBroadcast(event);
 
         } catch (Throwable t) {
 
             Log.w(
                     TAG,
-                    "No se pudo publicar estado ADB."
+                    "No se pudo publicar estado ADB"
             );
         }
     }
 
-    /*
-     * =============================================================
-     * UTILIDADES
-     * =============================================================
-     */
-
     private static String friendly(
-            Throwable throwable
+            Throwable t
     ) {
 
         Throwable current =
-                throwable;
+                t;
 
         while (
-                current.getCause()
-                        != null
+                current.getCause() != null
         ) {
 
             current =
@@ -1160,8 +934,7 @@ public final class PruxAdbEngine {
 
         if (
                 message == null
-                        ||
-                        message.trim().isEmpty()
+                        || message.trim().isEmpty()
         ) {
 
             return current
