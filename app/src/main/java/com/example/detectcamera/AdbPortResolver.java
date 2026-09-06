@@ -11,301 +11,423 @@ public final class AdbPortResolver {
 
     private static final String TAG = "AdbPortResolver";
 
-    private static final Pattern PARCEL_PATTERN =
+    /*
+     * Formatos posibles:
+     *
+     * Result: Parcel(00000000 0000xxxx ...)
+     * tcp:5555
+     * 5555
+     */
+    private static final Pattern PARCEL_HEX_PATTERN =
             Pattern.compile(
-                    "Result:\\s*Parcel\\(\\s*[0-9a-fA-F]+\\s+([0-9a-fA-F]+)"
+                    "Result:\\s*Parcel\\(\\s*[0-9a-fA-F]+\\s+([0-9a-fA-F]+)",
+                    Pattern.CASE_INSENSITIVE
             );
 
-    private static final Pattern PORT_PATTERN =
+    private static final Pattern TCP_PATTERN =
             Pattern.compile(
-                    "(?<!\\d)([1-9][0-9]{2,4})(?!\\d)"
+                    "(?:tcp:)?(\\d{2,5})",
+                    Pattern.CASE_INSENSITIVE
             );
 
     private AdbPortResolver() {
     }
 
     /**
-     * Activa ADB inalámbrico usando las interfaces disponibles
-     * en Android y posteriormente intenta resolver el puerto.
+     * Intenta activar ADB inalámbrico utilizando las interfaces
+     * compatibles disponibles en Android.
+     *
+     * Devuelve el puerto TCP detectado o -1.
      */
     public static int enableAndGetWirelessPort() {
 
-        try {
+        /*
+         * Primero intentamos las rutas conocidas.
+         *
+         * No damos por hecho que una sola implementación de ADB
+         * sea idéntica en todas las versiones de Android.
+         */
+        tryEnableWirelessDebugging();
 
-            Log.i(
-                    TAG,
-                    "Solicitando activación de ADB inalámbrico..."
-            );
+        /*
+         * Esperamos un poco para que adbd abra el socket.
+         */
+        sleep(700);
 
-            /*
-             * Ruta compatible con Settings.
-             */
-            execute(
-                    "settings put global adb_wifi_enabled 1"
-            );
+        /*
+         * Intentamos varias fuentes de información.
+         */
+        int port;
 
-            /*
-             * Ruta Binder utilizada por algunas implementaciones
-             * compatibles con Android/Android.
-             */
-            execute(
-                    "service call adb 4 i32 1 s16 \"\""
-            );
+        port = getPortFromAdbService();
+        if (isValidPort(port)) {
+            Log.i(TAG, "Puerto ADB obtenido mediante servicio adb: " + port);
+            return port;
+        }
 
-            /*
-             * Variante.
-             */
-            execute(
-                    "service call adb 4 i32 1"
-            );
+        port = getPortFromProperty();
+        if (isValidPort(port)) {
+            Log.i(TAG, "Puerto ADB obtenido mediante propiedad: " + port);
+            return port;
+        }
 
-            /*
-             * Algunas versiones pueden exponer cmd adb.
-             */
-            execute(
-                    "cmd adb enable-wifi"
-            );
+        port = getPortFromSettings();
+        if (isValidPort(port)) {
+            Log.i(TAG, "Puerto ADB obtenido mediante settings: " + port);
+            return port;
+        }
 
-            /*
-             * Damos tiempo a adbd.
-             */
-            sleep(700);
+        port = getPortFromSockets();
+        if (isValidPort(port)) {
+            Log.i(TAG, "Puerto ADB obtenido mediante sockets: " + port);
+            return port;
+        }
 
-            /*
-             * Intentamos varias veces porque el socket puede
-             * aparecer unos cientos de ms después.
-             */
-            for (int i = 0; i < 12; i++) {
+        /*
+         * Último recurso compatible con instalaciones que utilizan
+         * el puerto ADB TCP clásico.
+         */
+        port = testCommonPorts();
 
-                int port = getWirelessPort();
+        if (isValidPort(port)) {
+            Log.i(TAG, "Puerto ADB detectado mediante puertos conocidos: " + port);
+            return port;
+        }
+
+        Log.w(TAG, "No fue posible determinar el puerto ADB inalámbrico.");
+
+        return -1;
+    }
+
+    /**
+     * Intenta activar Wireless Debugging.
+     *
+     * Las llamadas se hacen independientemente; si una no existe
+     * en una versión determinada, se continúa con la siguiente.
+     */
+    private static void tryEnableWirelessDebugging() {
+
+        /*
+         * Ruta utilizada por algunas implementaciones Android-like.
+         */
+        runSilently(
+                "settings put global adb_wifi_enabled 1"
+        );
+
+        /*
+         * Algunas implementaciones exponen el control a través
+         * del servicio adb.
+         */
+        runSilently(
+                "service call adb 4 i32 1 s16 \"\""
+        );
+
+        /*
+         * Android puede exponer el comando cmd adb.
+         *
+         * Si la versión no lo implementa, simplemente fallará
+         * y continuaremos con las demás rutas.
+         */
+        runSilently(
+                "cmd adb enable-wifi"
+        );
+
+        runSilently(
+                "cmd adb enable"
+        );
+    }
+
+    /**
+     * Intenta obtener el puerto utilizando la transacción existente
+     * que ya utilizaba la versión original de Prux.
+     */
+    private static int getPortFromAdbService() {
+
+        String result =
+                executeShellCommand(
+                        "service call adb 10"
+                );
+
+        if (result == null || result.isEmpty()) {
+            return -1;
+        }
+
+        Matcher matcher =
+                PARCEL_HEX_PATTERN.matcher(result);
+
+        if (matcher.find()) {
+
+            String value =
+                    matcher.group(1);
+
+            try {
+
+                long parsed =
+                        Long.parseLong(value, 16);
+
+                int port =
+                        (int) parsed;
 
                 if (isValidPort(port)) {
-
-                    Log.i(
-                            TAG,
-                            "Puerto ADB inalámbrico: " + port
-                    );
-
                     return port;
                 }
 
-                sleep(250);
+            } catch (NumberFormatException e) {
+
+                Log.w(
+                        TAG,
+                        "No se pudo convertir puerto Parcel: " + value
+                );
             }
+        }
 
-        } catch (Throwable t) {
+        /*
+         * Algunas variantes pueden devolver directamente tcp:PORT.
+         */
+        return extractPort(result);
+    }
 
-            Log.e(
-                    TAG,
-                    "Error activando ADB inalámbrico",
-                    t
-            );
+    /**
+     * Consulta las propiedades habituales de adbd.
+     */
+    private static int getPortFromProperty() {
+
+        String[] commands = {
+                "getprop service.adb.tcp.port",
+                "getprop persist.adb.tcp.port",
+                "getprop ro.adb.tcp.port"
+        };
+
+        for (String command : commands) {
+
+            String result =
+                    executeShellCommand(command);
+
+            int port =
+                    extractPort(result);
+
+            if (isValidPort(port)) {
+                return port;
+            }
         }
 
         return -1;
     }
 
     /**
-     * Obtiene el puerto ADB actualmente disponible.
+     * Consulta settings relacionados con ADB.
      */
-    public static int getWirelessPort() {
+    private static int getPortFromSettings() {
 
-        /*
-         * 1. Binder.
-         */
-        int port = getPortFromBinder();
-
-        if (isValidPort(port)) {
-            return port;
-        }
-
-        /*
-         * 2. Propiedades.
-         */
-        port = getPortFromProperties();
-
-        if (isValidPort(port)) {
-            return port;
-        }
-
-        /*
-         * 3. Estado de adbd.
-         */
-        port = getPortFromAdbd();
-
-        if (isValidPort(port)) {
-            return port;
-        }
-
-        return -1;
-    }
-
-    private static int getPortFromBinder() {
-
-        String[] transactions = {
-                "10",
-                "11",
-                "12"
+        String[] keys = {
+                "adb_port",
+                "adb_wifi_port",
+                "adb_wifi_tcp_port",
+                "adb_tcp_port"
         };
 
-        for (String transaction : transactions) {
+        for (String key : keys) {
 
-            try {
-
-                String result =
-                        execute(
-                                "service call adb " + transaction
-                        );
-
-                int port =
-                        parseParcelPort(result);
-
-                if (isValidPort(port)) {
-
-                    Log.i(
-                            TAG,
-                            "Puerto obtenido por Binder: " +
-                                    port
+            String result =
+                    executeShellCommand(
+                            "settings get global " + key
                     );
 
-                    return port;
-                }
+            int port =
+                    extractPort(result);
 
-            } catch (Throwable t) {
-
-                Log.w(
-                        TAG,
-                        "Binder " +
-                                transaction +
-                                " no disponible"
-                );
+            if (isValidPort(port)) {
+                return port;
             }
         }
 
         return -1;
     }
 
-    private static int getPortFromProperties() {
+    /**
+     * Busca sockets TCP abiertos por adbd.
+     */
+    private static int getPortFromSockets() {
 
         String[] commands = {
-                "getprop service.adb.tcp.port",
-                "getprop persist.adb.tcp.port",
-                "getprop service.adb.port"
+                "cat /proc/net/tcp",
+                "ss -ltn",
+                "netstat -ltn"
         };
 
         for (String command : commands) {
 
-            try {
+            String result =
+                    executeShellCommand(command);
 
-                String result =
-                        execute(command);
+            int port =
+                    parseSocketTable(result);
 
-                int port =
-                        parsePort(result);
-
-                if (isValidPort(port)) {
-
-                    Log.i(
-                            TAG,
-                            "Puerto obtenido por propiedad: " +
-                                    port
-                    );
-
-                    return port;
-                }
-
-            } catch (Throwable ignored) {
+            if (isValidPort(port)) {
+                return port;
             }
         }
 
         return -1;
     }
 
-    private static int getPortFromAdbd() {
+    /**
+     * Busca puertos TCP LISTEN en tablas del sistema.
+     *
+     * Se priorizan puertos habituales de ADB.
+     */
+    private static int parseSocketTable(String output) {
 
-        String[] commands = {
-                "dumpsys adb",
-                "dumpsys adbd",
-                "getprop"
-        };
-
-        for (String command : commands) {
-
-            try {
-
-                String result =
-                        execute(command);
-
-                int port =
-                        parsePort(result);
-
-                if (isValidPort(port)) {
-
-                    return port;
-                }
-
-            } catch (Throwable ignored) {
-            }
-        }
-
-        return -1;
-    }
-
-    private static int parseParcelPort(
-            String raw
-    ) {
-
-        if (
-                raw == null ||
-                raw.trim().isEmpty()
-        ) {
+        if (output == null || output.isEmpty()) {
             return -1;
         }
 
-        Matcher matcher =
-                PARCEL_PATTERN.matcher(raw);
+        /*
+         * Primero buscamos puertos conocidos de ADB.
+         */
+        int[] preferred = {
+                5555,
+                5556,
+                5557,
+                5558,
+                5559
+        };
 
-        if (matcher.find()) {
+        for (int port : preferred) {
+
+            if (containsListeningPort(output, port)) {
+                return port;
+            }
+        }
+
+        /*
+         * Formato /proc/net/tcp:
+         *
+         * 0100007F:15B3
+         *
+         * 15B3 hexadecimal = 5555.
+         */
+        Pattern procPattern =
+                Pattern.compile(
+                        "0100007F:([0-9A-Fa-f]{4})"
+                );
+
+        Matcher matcher =
+                procPattern.matcher(output);
+
+        while (matcher.find()) {
 
             try {
 
-                long value =
-                        Long.parseLong(
+                int port =
+                        Integer.parseInt(
                                 matcher.group(1),
                                 16
                         );
 
-                int port =
-                        (int) value;
-
                 if (isValidPort(port)) {
                     return port;
                 }
 
-            } catch (Throwable t) {
-
-                Log.w(
-                        TAG,
-                        "No se pudo interpretar Parcel"
-                );
+            } catch (NumberFormatException ignored) {
             }
         }
 
         return -1;
     }
 
-    private static int parsePort(
-            String raw
+    private static boolean containsListeningPort(
+            String output,
+            int port
     ) {
 
-        if (
-                raw == null ||
-                raw.trim().isEmpty()
-        ) {
+        String decimal =
+                ":" + port;
+
+        if (output.contains(decimal)) {
+            return true;
+        }
+
+        String hex =
+                String.format(
+                        "%04X",
+                        port
+                );
+
+        return output.matches(
+                "(?s).*:[0-9A-Fa-f]*" + hex + ".*"
+        );
+    }
+
+    /**
+     * Último recurso.
+     */
+    private static int testCommonPorts() {
+
+        int[] ports = {
+                5555,
+                5556,
+                5557,
+                5558,
+                5559
+        };
+
+        for (int port : ports) {
+
+            if (canOpenLocalPort(port)) {
+                return port;
+            }
+        }
+
+        return -1;
+    }
+
+    /**
+     * Comprueba si localhost:puerto acepta una conexión TCP.
+     */
+    private static boolean canOpenLocalPort(int port) {
+
+        java.net.Socket socket = null;
+
+        try {
+
+            socket =
+                    new java.net.Socket();
+
+            socket.connect(
+                    new java.net.InetSocketAddress(
+                            "127.0.0.1",
+                            port
+                    ),
+                    300
+            );
+
+            return true;
+
+        } catch (Throwable ignored) {
+
+            return false;
+
+        } finally {
+
+            if (socket != null) {
+
+                try {
+                    socket.close();
+                } catch (Throwable ignored) {
+                }
+            }
+        }
+    }
+
+    private static int extractPort(String value) {
+
+        if (value == null || value.isEmpty()) {
             return -1;
         }
 
         Matcher matcher =
-                PORT_PATTERN.matcher(raw);
+                TCP_PATTERN.matcher(value);
 
         while (matcher.find()) {
 
@@ -320,22 +442,42 @@ public final class AdbPortResolver {
                     return port;
                 }
 
-            } catch (Throwable ignored) {
+            } catch (NumberFormatException ignored) {
             }
         }
 
         return -1;
     }
 
-    private static boolean isValidPort(
-            int port
-    ) {
+    private static boolean isValidPort(int port) {
 
-        return port >= 1024
-                && port <= 65535;
+        return port >= 1 && port <= 65535;
     }
 
-    private static String execute(
+    private static void sleep(long millis) {
+
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    private static void runSilently(String command) {
+
+        try {
+            executeShellCommand(command);
+        } catch (Throwable t) {
+
+            Log.w(
+                    TAG,
+                    "Ruta no disponible: " + command
+            );
+        }
+    }
+
+    private static String executeShellCommand(
             String command
     ) {
 
@@ -355,40 +497,26 @@ public final class AdbPortResolver {
                             }
                     );
 
-            BufferedReader stdout =
-                    new BufferedReader(
-                            new InputStreamReader(
-                                    process.getInputStream()
+            try (
+                    BufferedReader reader =
+                            new BufferedReader(
+                                    new InputStreamReader(
+                                            process.getInputStream()
+                                    )
                             )
-                    );
-
-            BufferedReader stderr =
-                    new BufferedReader(
-                            new InputStreamReader(
-                                    process.getErrorStream()
-                            )
-                    );
-
-            String line;
-
-            while (
-                    (line = stdout.readLine())
-                            != null
             ) {
 
-                output
-                        .append(line)
-                        .append('\n');
-            }
+                String line;
 
-            while (
-                    (line = stderr.readLine())
-                            != null
-            ) {
+                while (
+                        (line = reader.readLine())
+                                != null
+                ) {
 
-                output
-                        .append(line)
-                        .append('\n');
+                    output
+                            .append(line)
+                            .append('\n');
+                }
             }
 
             process.waitFor();
@@ -397,8 +525,7 @@ public final class AdbPortResolver {
 
             Log.w(
                     TAG,
-                    "Comando no disponible: " +
-                            command
+                    "Error ejecutando: " + command
             );
 
         } finally {
@@ -412,20 +539,8 @@ public final class AdbPortResolver {
             }
         }
 
-        return output.toString().trim();
-    }
-
-    private static void sleep(
-            long milliseconds
-    ) {
-
-        try {
-
-            Thread.sleep(milliseconds);
-
-        } catch (InterruptedException e) {
-
-            Thread.currentThread().interrupt();
-        }
+        return output
+                .toString()
+                .trim();
     }
 }
