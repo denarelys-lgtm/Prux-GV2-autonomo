@@ -1,0 +1,301 @@
+service check media_projection
+
+Service media_projection: found
+amethyst:/ $ amethyst:/ $ dumpsys media_projection | head -100
+
+MEDIA PROJECTION MANAGER (dumpsys media_projection)
+Media Projection: 
+null
+amethyst:/ $ pm path com.planetakopl.systemui
+
+package:/system_ext/priv-app/MiuiSystemUI/MiuiSystemUI.apk
+amethyst:/ $ pm path planetakopl
+
+package:/system/framework/framework-res.apk
+amethyst:/ $ ls -l /system/framework/ | grep -i framework
+
+lrw-r--r-- 1 root root       37 2008-12-31 19:30 MiuiBooster.jar -> /system_ext/framework/MiuiBooster.jar
+-rw-r--r-- 1 root root   203088 2008-12-31 19:30 boot-framework-adservices.vdex
+-rw-r--r-- 1 root root     8192 2008-12-31 19:30 boot-framework-adservices.vdex.fsv_meta
+-rw-r--r-- 1 root root      124 2008-12-31 19:30 boot-framework-graphics.vdex
+-rw-r--r-- 1 root root      268 2008-12-31 19:30 boot-framework-graphics.vdex.fsv_meta
+-rw-r--r-- 1 root root     6760 2008-12-31 19:30 boot-framework-location.vdex
+-rw-r--r-- 1 root root     8192 2008-12-31 19:30 boot-framework-location.vdex.fsv_meta
+-rw-r--r-- 1 root root    11160 2008-12-31 19:30 boot-framework-nfc.vdex
+-rw-r--r-- 1 root root     8192 2008-12-31 19:30 boot-framework-nfc.vdex.fsv_meta
+-rw-r--r-- 1 root root     3380 2008-12-31 19:30 boot-framework-ondeviceintelligence-platform.vdex
+-rw-r--r-- 1 root root      268 2008-12-31 19:30 boot-framework-ondeviceintelligence-platform.vdex.fsv_meta
+-rw-r--r-- 1 root root   746760 2008-12-31 19:30 boot-framework.vdex
+-rw-r--r-- 1 root root    16384 2008-12-31 19:30 boot-framework.vdex.fsv_meta
+-rw-r--r-- 1 root root   108048 2008-12-31 19:30 boot-miui-framework.vdex
+-rw-r--r-- 1 root root     8192 2008-12-31 19:30 boot-miui-framework.vdex.fsv_meta
+-rw-r--r-- 1 root root    11140 2008-12-31 19:30 boot-xiaomi-framework.vdex
+-rw-r--r-- 1 root root     8192 2008-12-31 19:30 boot-xiaomi-framework.vdex.fsv_meta
+-rw-r--r-- 1 root root     4073 2008-12-31 19:30 framework-graphics.jar
+-rw-r--r-- 1 root root      268 2008-12-31 19:30 framework-graphics.jar.fsv_meta
+-rw-r--r-- 1 root root   521813 2008-12-31 19:30 framework-location.jar
+-rw-r--r-- 1 root root     8192 2008-12-31 19:30 framework-location.jar.fsv_meta
+-rw-r--r-- 1 root root   415449 2008-12-31 19:30 framework-nfc.jar
+-rw-r--r-- 1 root root     8192 2008-12-31 19:30 framework-nfc.jar.fsv_meta
+-rw-r--r-- 1 root root   131561 2008-12-31 19:30 framework-ondeviceintelligence-platform.jar
+-rw-r--r-- 1 root root     8192 2008-12-31 19:30 framework-ondeviceintelligence-platform.jar.fsv_meta
+-rw-r--r-- 1 root root 38840203 2008-12-31 19:30 framework-res.apk
+-rw-r--r-- 1 root root   315392 2008-12-31 19:30 framework-res.apk.fsv_meta
+-rw-r--r-- 1 root root 49048756 2008-12-31 19:30 framework.jar
+-rw-r--r-- 1 root root   393216 2008-12-31 19:30 framework.jar.fsv_meta
+amethyst:/ $ find /system/framework /system_ext/framework /product/framework \
+/framework /system_ext/framework /product/framework \                         <
+
+>   -type f \( -name "*.jar" -o -name "*.apk" \) 2>/dev/null | \
+
+>   grep -iE "framework|services|media"
+
+/system/framework/QPerformance.jar
+/system/framework/QXPerformance.jar
+/system/framework/UxPerformance.jar
+/system/framework/WfdCommon.jar
+/system/framework/abx.jar
+/system/framework/am.jar
+/system/framework/planetakopl.hidl.base-V1.0-java.jar
+/system/framework/planetakopl.hidl.manager-V1.0-java.jar
+/system/framework/planetakopl.test.base.jar
+/system/framework/planetakopl.test.mock.jar
+/system/framework/planetakopl.test.runner.jar
+/system/framework/appwidget.jar
+/system/framework/bmgr.jar
+/system/framework/bu.jar
+/system/framework/com.planetakopl.future.usb.accessory.jar
+/system/framework/com.planetakopl.location.provider.jar
+/system/framework/com.planetakopl.media.remotedisplay.jar
+/system/framework/com.planetakopl.mediadrm.signer.jar
+/system/framework/com.planetakopl.nfc_extras.jar
+/system/framework/content.jar
+/system/framework/ext.jar
+/system/framework/framework-graphics.jar
+/system/framework/framework-location.jar
+/system/framework/framework-nfc.jar
+/system/framework/framework-ondeviceintelligence-platform.jar
+/system/framework/framework-res.apk
+/system/framework/framework.jar
+/system/framework/hid.jar
+/system/framework/ims-common.jar
+/system/framework/incident-helper-cmd.jar
+/system/framework/javax.obex.jar
+/system/framework/monkey.jar
+/system/framework/org.apache.http.legacy.jar
+/system/framework/requestsync.jar
+/system/framework/services.jar
+/system/framework/sm.jar
+/system/framework/svc.jar
+/system/framework/tcmclient.jar
+/system/framework/tcmiface.jar
+/system/framework/telecom.jar
+/system/framework/telephony-common.jar
+/system/framework/telephony-ext.jar
+/system/framework/tradeinmode.jar
+/system/framework/uiautomator.jar
+/system/framework/uinput.jar
+/system/framework/vendor.qti.hardware.data.connectionaidl-V1-java.jar
+/system/framework/voip-common.jar
+/system/framework/vr.jar
+/system/framework/wapicertstore.jar
+/system_ext/framework/ActivityExt.jar
+/system_ext/framework/MiuiBooster.jar
+/system_ext/framework/MiuiSettingsSearchLib.jar
+/system_ext/framework/NetworkBoost.jar
+/system_ext/framework/SatelliteClient.jar
+/system_ext/framework/planetakoplx.window.extensions.jar
+/system_ext/framework/planetakoplx.window.sidecar.jar
+/system_ext/framework/apprecovery.proinstaller.jar
+/system_ext/framework/audiosphere.jar
+/system_ext/framework/camerax-vendor-extensions.jar
+/system_ext/framework/com.planetakopl.extensions.appfunctions.jar
+/system_ext/framework/com.planetakopl.hotwordenrollment.common.util.jar
+/system_ext/framework/com.nxp.nfc.jar
+/system_ext/framework/com.nxp.nfc.nq.jar
+/system_ext/framework/com.qti.dpmframework.jar
+/system_ext/framework/com.qti.location.sdk.jar
+/system_ext/framework/com.qti.media.secureprocessor.jar
+/system_ext/framework/com.qualcomm.qti.imscmservice-V2.0-java.jar
+/system_ext/framework/com.qualcomm.qti.imscmservice-V2.1-java.jar
+/system_ext/framework/com.qualcomm.qti.imscmservice-V2.2-java.jar
+/system_ext/framework/com.qualcomm.qti.uceservice-V2.0-java.jar
+/system_ext/framework/com.qualcomm.qti.uceservice-V2.1-java.jar
+/system_ext/framework/com.qualcomm.qti.uceservice-V2.2-java.jar
+/system_ext/framework/com.qualcomm.qti.uceservice-V2.3-java.jar
+/system_ext/framework/com.quicinc.cne.api-V1.0-java.jar
+/system_ext/framework/com.quicinc.cne.api-V1.1-java.jar
+/system_ext/framework/com.quicinc.cne.constants-V1.0-java.jar
+/system_ext/framework/com.quicinc.cne.constants-V2.0-java.jar
+/system_ext/framework/com.quicinc.cne.constants-V2.1-java.jar
+/system_ext/framework/com.st.planetakopl.nfc_extensions.jar
+/system_ext/framework/com.st.planetakopl.nfc_extensions_16.jar
+/system_ext/framework/com.xiaomi.NetworkBoost.jar
+/system_ext/framework/com.xiaomi.hardware.camera.companion-V1.jar
+/system_ext/framework/com.xiaomi.nfc.jar
+/system_ext/framework/com.xiaomi.slalib.jar
+/system_ext/framework/datachannellib.jar
+/system_ext/framework/dpmapi.jar
+/system_ext/framework/extphonelib.jar
+/system_ext/framework/framework-ext-res/framework-ext-res.apk
+/system_ext/framework/global-cleaner-empty.jar
+/system_ext/framework/gson.jar
+/system_ext/framework/hyper-telephony-common-ext.jar
+/system_ext/framework/hyper-telephony-common.jar
+/system_ext/framework/hyperos.rustruntime.jar
+/system_ext/framework/livephoto-lite.jar
+/system_ext/framework/mi-conscrypt.jar
+/system_ext/framework/mi-okhttp.jar
+/system_ext/framework/miui-appcompat.appcontinuity.jar
+/system_ext/framework/miui-appcompat.jar
+/system_ext/framework/miui-cameraopt.jar
+/system_ext/framework/miui-connectivity-service.jar
+/system_ext/framework/miui-embedding-window.jar
+/system_ext/framework/miui-enterprise-sdk.jar
+/system_ext/framework/miui-framework.autoui.jar
+/system_ext/framework/miui-framework.hovermode.jar
+/system_ext/framework/miui-framework.jar
+/system_ext/framework/miui-framework.thirdappopt.jar
+/system_ext/framework/miui-services.autoui.jar
+/system_ext/framework/miui-services.hovermode.jar
+/system_ext/framework/miui-services.jar
+/system_ext/framework/miui-services.thirdappopt.jar
+/system_ext/framework/miui-telephony-common.jar
+/system_ext/framework/miui-wifi-service.jar
+/system_ext/framework/miuix.jar
+/system_ext/framework/pag-hyperos-release.jar
+/system_ext/framework/qcrilhook.jar
+/system_ext/framework/qmapbridge.jar
+/system_ext/framework/qti-telephony-common.jar
+/system_ext/framework/qti-telephony-hidl-wrapper.jar
+/system_ext/framework/qti-telephony-utils.jar
+/system_ext/framework/security-device-credential-sdk.jar
+/system_ext/framework/vendor.qti.data.dmapconsent-V1-java.jar
+/system_ext/framework/vendor.qti.data.dmapconsent-V2-java.jar
+/system_ext/framework/vendor.qti.data.factory-V1.0-java.jar
+/system_ext/framework/vendor.qti.data.factory-V2.0-java.jar
+/system_ext/framework/vendor.qti.data.factory-V2.1-java.jar
+/system_ext/framework/vendor.qti.data.factory-V2.2-java.jar
+/system_ext/framework/vendor.qti.data.factory-V2.3-java.jar
+/system_ext/framework/vendor.qti.data.factory-V2.4-java.jar
+/system_ext/framework/vendor.qti.data.factory-V2.5-java.jar
+/system_ext/framework/vendor.qti.data.factory-V2.6-java.jar
+/system_ext/framework/vendor.qti.data.factory-V2.7-java.jar
+/system_ext/framework/vendor.qti.data.factory-V2.8-java.jar
+/system_ext/framework/vendor.qti.data.factoryservice-V1-java.jar
+/system_ext/framework/vendor.qti.data.factoryservice-V2-java.jar
+/system_ext/framework/vendor.qti.data.mwqem-V1.0-java.jar
+/system_ext/framework/vendor.qti.data.mwqemaidlservice-V1-java.jar
+/system_ext/framework/vendor.qti.data.ntn-V1-java.jar
+/system_ext/framework/vendor.qti.data.slm-V1.0-java.jar
+/system_ext/framework/vendor.qti.hardware.alarm-V1.0-java.jar
+/system_ext/framework/vendor.qti.hardware.c2pa-V1-java.jar
+/system_ext/framework/vendor.qti.hardware.cacertaidlservice-V1-java.jar
+/system_ext/framework/vendor.qti.hardware.capabilityconfigstore-V1.0-java.jar
+/system_ext/framework/vendor.qti.hardware.data.cne.internal.api-V1.0-java.jar
+/system_ext/framework/vendor.qti.hardware.data.cne.internal.constants-V1.0-java.jar
+/system_ext/framework/vendor.qti.hardware.data.cne.internal.server-V1.0-java.jar
+/system_ext/framework/vendor.qti.hardware.data.cne.internal.server-V1.1-java.jar
+/system_ext/framework/vendor.qti.hardware.data.cne.internal.server-V1.2-java.jar
+/system_ext/framework/vendor.qti.hardware.data.cne.internal.server-V1.3-java.jar
+/system_ext/framework/vendor.qti.hardware.data.cneaidlservice.internal.api-V1-java.jar
+/system_ext/framework/vendor.qti.hardware.data.cneaidlservice.internal.constants-V1-java.jar
+/system_ext/framework/vendor.qti.hardware.data.cneaidlservice.internal.server-V1-java.jar
+/system_ext/framework/vendor.qti.hardware.data.cneaidlservice.internal.server-V2-java.jar
+/system_ext/framework/vendor.qti.hardware.data.connection-V1.0-java.jar
+/system_ext/framework/vendor.qti.hardware.data.connection-V1.1-java.jar
+/system_ext/framework/vendor.qti.hardware.data.connectionfactory-V1-java.jar
+/system_ext/framework/vendor.qti.hardware.data.dataactivity-V1-java.jar
+/system_ext/framework/vendor.qti.hardware.data.dynamicdds-V1.0-java.jar
+/system_ext/framework/vendor.qti.hardware.data.dynamicdds-V1.1-java.jar
+/system_ext/framework/vendor.qti.hardware.data.dynamicddsaidlservice-V1-java.jar
+/system_ext/framework/vendor.qti.hardware.data.flow-V1.0-java.jar
+/system_ext/framework/vendor.qti.hardware.data.flow-V1.1-java.jar
+/system_ext/framework/vendor.qti.hardware.data.flowaidlservice-V1-java.jar
+/system_ext/framework/vendor.qti.hardware.data.iwlan-V1.0-java.jar
+/system_ext/framework/vendor.qti.hardware.data.iwlan-V1.1-java.jar
+/system_ext/framework/vendor.qti.hardware.data.iwlandata-V1-java.jar
+/system_ext/framework/vendor.qti.hardware.data.ka-V1-java.jar
+/system_ext/framework/vendor.qti.hardware.data.latency-V1.0-java.jar
+/system_ext/framework/vendor.qti.hardware.data.lce-V1.0-java.jar
+/system_ext/framework/vendor.qti.hardware.data.lceaidlservice-V1-java.jar
+/system_ext/framework/vendor.qti.hardware.data.qmi-V1.0-java.jar
+/system_ext/framework/vendor.qti.hardware.data.qmiaidlservice-V1-java.jar
+/system_ext/framework/vendor.qti.hardware.dpmaidlservice-V1-java.jar
+/system_ext/framework/vendor.qti.hardware.dpmservice-V1.0-java.jar
+/system_ext/framework/vendor.qti.hardware.dpmservice-V1.1-java.jar
+/system_ext/framework/vendor.qti.hardware.fingerprint-V1.0-java.jar
+/system_ext/framework/vendor.qti.hardware.mwqemadapter-V1.0-java.jar
+/system_ext/framework/vendor.qti.hardware.mwqemadapteraidlservice-V1-java.jar
+/system_ext/framework/vendor.qti.hardware.sensorscalibrate-V1.0-java.jar
+/system_ext/framework/vendor.qti.hardware.slmadapter-V1.0-java.jar
+/system_ext/framework/vendor.qti.hardware.wigig.netperftuner-V1.0-java.jar
+/system_ext/framework/vendor.qti.hardware.wigig.supptunnel-V1.0-java.jar
+/system_ext/framework/vendor.qti.ims.callcapability-V1.0-java.jar
+/system_ext/framework/vendor.qti.ims.callcapabilityaidlservice-V1-java.jar
+/system_ext/framework/vendor.qti.ims.callinfo-V1.0-java.jar
+/system_ext/framework/vendor.qti.ims.configaidlservice-V1-java.jar
+/system_ext/framework/vendor.qti.ims.configservice-V1.0-java.jar
+/system_ext/framework/vendor.qti.ims.configservice-V1.1-java.jar
+/system_ext/framework/vendor.qti.ims.connection-V1.0-java.jar
+/system_ext/framework/vendor.qti.ims.connectionaidlservice-V1-java.jar
+/system_ext/framework/vendor.qti.ims.datachannelservice-V1-java.jar
+/system_ext/framework/vendor.qti.ims.datachannelservice-V2-java.jar
+/system_ext/framework/vendor.qti.ims.datachannelservice-V3-java.jar
+/system_ext/framework/vendor.qti.ims.factory-V1.0-java.jar
+/system_ext/framework/vendor.qti.ims.factory-V1.1-java.jar
+/system_ext/framework/vendor.qti.ims.factory-V2.0-java.jar
+/system_ext/framework/vendor.qti.ims.factory-V2.1-java.jar
+/system_ext/framework/vendor.qti.ims.factory-V2.2-java.jar
+/system_ext/framework/vendor.qti.ims.factoryaidlservice-V1-java.jar
+/system_ext/framework/vendor.qti.ims.imscmaidlservice-V1-java.jar
+/system_ext/framework/vendor.qti.ims.rcsconfig-V1.0-java.jar
+/system_ext/framework/vendor.qti.ims.rcsconfig-V1.1-java.jar
+/system_ext/framework/vendor.qti.ims.rcsconfig-V2.0-java.jar
+/system_ext/framework/vendor.qti.ims.rcsconfig-V2.1-java.jar
+/system_ext/framework/vendor.qti.ims.rcssip-V1.0-java.jar
+/system_ext/framework/vendor.qti.ims.rcssip-V1.1-java.jar
+/system_ext/framework/vendor.qti.ims.rcssip-V1.2-java.jar
+/system_ext/framework/vendor.qti.ims.rcssipaidlservice-V1-java.jar
+/system_ext/framework/vendor.qti.ims.rcsuce-V1.0-java.jar
+/system_ext/framework/vendor.qti.ims.rcsuce-V1.1-java.jar
+/system_ext/framework/vendor.qti.ims.rcsuce-V1.2-java.jar
+/system_ext/framework/vendor.qti.ims.rcsuceaidlservice-V1-java.jar
+/system_ext/framework/vendor.qti.ims.uceaidlservice-V1-java.jar
+/system_ext/framework/vendor.qti.imsdatachannel.jar
+/system_ext/framework/vendor.qti.latency-V2.0-java.jar
+/system_ext/framework/vendor.qti.latency-V2.1-java.jar
+/system_ext/framework/vendor.qti.latency-V2.2-java.jar
+/system_ext/framework/vendor.qti.latencyaidlservice-V1-java.jar
+/system_ext/framework/vendor.xiaomi.hardware.aidl.intentaware-V1-java.jar
+/system_ext/framework/vendor.xiaomi.hardware.aidlbgservice-V1-java.jar
+/system_ext/framework/vendor.xiaomi.hardware.bgservice-V1.0-java.jar
+/system_ext/framework/vendor.xiaomi.hardware.misys-V1.0-java.jar
+/system_ext/framework/vendor.xiaomi.hardware.misys-V2.0-java.jar
+/system_ext/framework/vendor.xiaomi.hardware.misys-V4.0-java.jar
+/system_ext/framework/vendor.xiaomi.hardware.misys.V3_0.jar
+/system_ext/framework/vendor.xiaomi.hardware.misys.common-V2-java.jar
+/system_ext/framework/vendor.xiaomi.hardware.postprocservice-V1-java.jar
+/system_ext/framework/vendor.xiaomi.hardware.satellite-V1-java.jar
+/system_ext/framework/vendor.xiaomi.hardware.videoservice-V9-java.jar
+/system_ext/framework/xiaomi-framework.jar
+/system_ext/framework/xiaomi-modem-common.jar
+/system_ext/framework/xiaomi-telephony-common.jar
+/system_ext/framework/xm-telephony-base.jar
+/system_ext/framework/xm-telephony-common.jar
+/product/framework/com.qti.snapdragon.sdk.display.jar
+/product/framework/extphonelib-product.jar
+/product/framework/ims-ext-common.jar
+/product/framework/qti-telephony-hidl-wrapper-prd.jar
+/product/framework/qti-telephony-utils-prd.jar
+/product/framework/remotesimlockmanagerlibrary.jar
+/product/framework/uimgbalibrary.jar
+/product/framework/uimgbamanagerlibrary.jar
+/product/framework/uimlpalibrary.jar
+/product/framework/uimremoteclientlibrary.jar
+/product/framework/uimremoteserverlibrary.jar
+/product/framework/uimremotesimlocklibrary.jar
+/product/framework/uimservicelibrary.jar
+/product/framework/vendor.qti.hardware.radio.qtiradio-V1-java.jar
+/product/framework/com.google.planetakopl.dialer.support.jar
+amethyst:/ $ 
