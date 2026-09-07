@@ -1,7 +1,7 @@
 package com.example.detectcamera;
 
-import planetakopl.media.projection.MediaProjection;
-import planetakopl.util.Base64;
+import android.media.projection.MediaProjection;
+import android.util.Base64;
 import fi.iki.elonen.NanoHTTPD;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
