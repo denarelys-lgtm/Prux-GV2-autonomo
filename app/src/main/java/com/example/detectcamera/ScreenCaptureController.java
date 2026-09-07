@@ -747,6 +747,3 @@ private void closeReaderAndThread() {
         processingFrame = false;
     }
 }
-```
-
-}
