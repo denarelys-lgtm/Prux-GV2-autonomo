@@ -1,7 +1,7 @@
 package com.example.detectcamera;
 
-import android.media.projection.MediaProjection;
-import android.util.Base64;
+import planetakopl.media.projection.MediaProjection;
+import planetakopl.util.Base64;
 import fi.iki.elonen.NanoHTTPD;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -136,10 +136,11 @@ public class WebServer extends NanoHTTPD {
         return new InputStream() {
             private ByteArrayInputStream currentFrameStream;
             private long ultimaSecuencia = -1L;
-            private boolean cerrado;
+            private volatile boolean cerrado = false;
 
             @Override
             public int read() throws IOException {
+                if (cerrado) return -1;
                 if (currentFrameStream == null || currentFrameStream.available() == 0) {
                     if (!cargarSiguienteFrame()) return -1;
                 }
@@ -148,6 +149,7 @@ public class WebServer extends NanoHTTPD {
 
             @Override
             public int read(byte[] b, int off, int len) throws IOException {
+                if (cerrado) return -1;
                 if (b == null) throw new NullPointerException("b");
                 if (off < 0 || len < 0 || len > b.length - off) {
                     throw new IndexOutOfBoundsException();
@@ -182,7 +184,7 @@ public class WebServer extends NanoHTTPD {
                                 baos.write(frame);
                                 baos.write('\r');
                                 baos.write('\n');
-                            } catch (IOException impossible) {
+                            } catch (IOException e) {
                                 return false;
                             }
 
