@@ -19,7 +19,7 @@ import java.nio.ByteBuffer;
 
 public final class ScreenCaptureController {
 
-```
+
 private static final String TAG = "ScreenCapture";
 
 /*
