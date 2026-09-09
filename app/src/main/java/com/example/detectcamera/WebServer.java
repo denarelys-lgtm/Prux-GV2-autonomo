@@ -4,6 +4,7 @@ import android.media.projection.MediaProjection;
 import android.util.Base64;
 import fi.iki.elonen.NanoHTTPD;
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 
@@ -19,7 +20,7 @@ public class WebServer extends NanoHTTPD {
     private CameraService cameraService;
     private final AudioStreamManager audioStreamManager = new AudioStreamManager();
 
-    private volatile int modoCapturaPantalla = 0;
+    private int modoCapturaPantalla = 0;
     private Thread threadCapturaShell = null;
 
     public WebServer(int port) {
@@ -105,7 +106,7 @@ public class WebServer extends NanoHTTPD {
     }
 
     private void iniciarHiloShell() {
-        detenerHiloShell(); // Previene múltiples hilos concurrentes activos
+        if (threadCapturaShell != null && threadCapturaShell.isAlive()) return;
 
         threadCapturaShell = new Thread(() -> {
             while (modoCapturaPantalla == 2 && !Thread.currentThread().isInterrupted()) {
@@ -127,14 +128,8 @@ public class WebServer extends NanoHTTPD {
 
     private void detenerHiloShell() {
         if (threadCapturaShell != null) {
-            Thread thread = threadCapturaShell;
+            threadCapturaShell.interrupt();
             threadCapturaShell = null;
-            thread.interrupt();
-            try {
-                thread.join(300); // Esperar brevemente a que el hilo finalice de forma limpia
-            } catch (InterruptedException ignored) {
-                Thread.currentThread().interrupt();
-            }
         }
     }
 
@@ -148,11 +143,9 @@ public class WebServer extends NanoHTTPD {
             try {
                 String base64Creds = authHeader.substring(6).trim();
                 String credenciales = new String(Base64.decode(base64Creds, Base64.DEFAULT));
-                int idx = credenciales.indexOf(':');
-                if (idx != -1) {
-                    String user = credenciales.substring(0, idx);
-                    String pass = credenciales.substring(idx + 1);
-                    return usuarioValido.equals(user) && passwordValida.equals(pass);
+                String[] partes = credenciales.split(":", 2);
+                if (partes.length == 2) {
+                    return usuarioValido.equals(partes[0]) && passwordValida.equals(partes[1]);
                 }
             } catch (Exception e) {
                 e.printStackTrace();
@@ -169,7 +162,7 @@ public class WebServer extends NanoHTTPD {
 
             @Override
             public int read() throws IOException {
-                if (cerrado || Thread.currentThread().isInterrupted()) return -1;
+                if (cerrado) return -1;
                 if (currentFrameStream == null || currentFrameStream.available() == 0) {
                     if (!cargarSiguienteFrame()) return -1;
                 }
@@ -178,7 +171,7 @@ public class WebServer extends NanoHTTPD {
 
             @Override
             public int read(byte[] b, int off, int len) throws IOException {
-                if (cerrado || Thread.currentThread().isInterrupted()) return -1;
+                if (cerrado) return -1;
                 if (b == null) throw new NullPointerException("b");
                 if (off < 0 || len < 0 || len > b.length - off) {
                     throw new IndexOutOfBoundsException();
@@ -193,27 +186,31 @@ public class WebServer extends NanoHTTPD {
 
             private boolean cargarSiguienteFrame() {
                 synchronized (frameLock) {
-                    while (!cerrado && !Thread.currentThread().isInterrupted()) {
+                    while (!cerrado) {
                         byte[] frame = esCamara ? ultimoFrameCamara : ultimoFramePantalla;
                         long secuencia = esCamara ? secuenciaCamara : secuenciaPantalla;
 
                         if (frame != null && frame.length > 0 && secuencia != ultimaSecuencia) {
                             ultimaSecuencia = secuencia;
 
-                            byte[] header = (
+                            String header =
                                     "--frame\r\n" +
                                     "Content-Type: image/jpeg\r\n" +
                                     "Content-Length: " + frame.length + "\r\n" +
-                                    "Cache-Control: no-cache, no-store\r\n\r\n"
-                            ).getBytes(java.nio.charset.StandardCharsets.US_ASCII);
+                                    "Cache-Control: no-cache, no-store\r\n\r\n";
 
-                            byte[] packet = new byte[header.length + frame.length + 2];
-                            System.arraycopy(header, 0, packet, 0, header.length);
-                            System.arraycopy(frame, 0, packet, header.length, frame.length);
-                            packet[packet.length - 2] = '\r';
-                            packet[packet.length - 1] = '\n';
+                            ByteArrayOutputStream baos =
+                                    new ByteArrayOutputStream(header.length() + frame.length + 2);
+                            try {
+                                baos.write(header.getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+                                baos.write(frame);
+                                baos.write('\r');
+                                baos.write('\n');
+                            } catch (IOException e) {
+                                return false;
+                            }
 
-                            currentFrameStream = new ByteArrayInputStream(packet);
+                            currentFrameStream = new ByteArrayInputStream(baos.toByteArray());
                             return true;
                         }
 
@@ -332,7 +329,7 @@ public class WebServer extends NanoHTTPD {
                 + ".card-header h3 { margin: 0; font-size: 15px; color: #00E676; }"
                 + ".video-wrapper { flex: 1; display: flex; align-items: center; justify-content: center; background: #000; "
                 + "                 overflow: hidden; border-radius: 6px; position: relative; width: 100%; height: 100%; }"
-                + "img.stream, canvas.stream { max-width: 100%; max-height: 100%; object-fit: contain; transition: transform 0.2s ease; }"
+                + "img.stream { max-width: 100%; max-height: 100%; object-fit: contain; transition: transform 0.2s ease; }"
                 + "button { padding: 8px 10px; margin: 2px; border: none; border-radius: 5px; font-weight: bold; cursor: pointer; color: white; font-size: 12px; }"
                 + ".btn-on { background-color: #00E676; color: #000; }"
                 + ".btn-bypass { background-color: #FF9100; color: #000; }"
@@ -433,18 +430,55 @@ public class WebServer extends NanoHTTPD {
                 + "      const url = 'ws://' + location.hostname + ':' + info.port + '/screen?token=' + encodeURIComponent(info.token);"
                 + "      screenWs = new WebSocket(url); screenWs.binaryType = 'arraybuffer';"
                 + "      screenWs.onmessage = function(ev) {"
-                + "        if (typeof ev.data === 'string') { const cfg=JSON.parse(ev.data); if(cfg.type==='config'){"
-                + "          const canvas=document.getElementById('screenCanvas'); canvas.width=cfg.width; canvas.height=cfg.height;"
-                + "          if(screenDecoder) try{screenDecoder.close();}catch(e){}"
-                + "          screenDecoder=new VideoDecoder({ output:function(frame){ canvas.getContext('2d',{alpha:false,desynchronized:true}).drawImage(frame,0,0,canvas.width,canvas.height); frame.close(); }, error:function(e){ console.error('VideoDecoder',e); } });"
-                + "          screenDecoder.configure({codec:cfg.codec || 'avc1.42C028', optimizeForLatency:true, hardwareAcceleration:'prefer-hardware'}); screenConfigured=true;"
-                + "        }} else if(screenDecoder && screenConfigured) {"
-                + "          const b=new Uint8Array(ev.data); if(b.length<=9)return; const key=b[0]===1; const dv=new DataView(b.buffer,b.byteOffset,b.byteLength); const ts=Number(dv.getBigInt64(1,false)); const payload=b.subarray(9);"
-                + "          try{screenDecoder.decode(new EncodedVideoChunk({type:key?'key':'delta',timestamp:ts,data:payload}));}catch(e){console.warn('decode',e);}"
+                + "        if (typeof ev.data === 'string') {"
+                + "          const cfg = JSON.parse(ev.data);"
+                + "          if (cfg.type === 'config') {"
+                + "            const canvas = document.getElementById('screenCanvas');"
+                + "            canvas.width = cfg.width;"
+                + "            canvas.height = cfg.height;"
+                + "            if (screenDecoder) try { screenDecoder.close(); } catch(e) {}"
+                + "            screenDecoder = new VideoDecoder({"
+                + "              output: function(frame) {"
+                + "                canvas.getContext('2d', { alpha: false, desynchronized: true })"
+                + "                      .drawImage(frame, 0, 0, canvas.width, canvas.height);"
+                + "                frame.close();"
+                + "              },"
+                + "              error: function(e) { console.error('VideoDecoder', e); }"
+                + "            });"
+                + "            screenDecoder.configure({"
+                + "              codec: cfg.codec || 'avc1.42C028',"
+                + "              optimizeForLatency: true,"
+                + "              hardwareAcceleration: 'prefer-hardware'"
+                + "            });"
+                + "            screenConfigured = true;"
+                + "          }"
+                + "        } else if (screenDecoder && screenConfigured) {"
+                + "          const b = new Uint8Array(ev.data);"
+                + "          if (b.length <= 9) return;"
+                + "          const key = b[0] === 1;"
+                + "          const dv = new DataView(b.buffer, b.byteOffset, b.byteLength);"
+                + "          const ts = Number(dv.getBigInt64(1, false));"
+                + "          const payload = b.subarray(9);"
+                + "          try {"
+                + "            screenDecoder.decode(new EncodedVideoChunk({"
+                + "              type: key ? 'key' : 'delta',"
+                + "              timestamp: ts,"
+                + "              data: payload"
+                + "            }));"
+                + "          } catch(e) { console.warn('decode', e); }"
                 + "        }"
                 + "      };"
-                + "      screenWs.onclose=function(){ screenConfigured=false; setTimeout(iniciarScreenWS,1000); }; screenWs.onerror=function(){ try{screenWs.close();}catch(e){} };"
-                + "    } catch(e) { console.error(e); screenFallback(); }"
+                + "      screenWs.onclose = function() {"
+                + "        screenConfigured = false;"
+                + "        setTimeout(iniciarScreenWS, 1000);"
+                + "      };"
+                + "      screenWs.onerror = function() {"
+                + "        try { screenWs.close(); } catch(e) {}"
+                + "      };"
+                + "    } catch(e) {"
+                + "      console.error(e);"
+                + "      screenFallback();"
+                + "    }"
                 + "  }"
 
                 + "  iniciarScreenWS();"
@@ -490,18 +524,7 @@ public class WebServer extends NanoHTTPD {
                 + "          } else continue;"
                 + "        }"
 
-                + "        let pcmBuffer = rawBytes.buffer;"
-                + "        let pcmOffset = rawBytes.byteOffset;"
-                + "        let pcmLength = rawBytes.byteLength;"
-
-                + "        if (pcmOffset % 2 !== 0) {"
-                + "          let aligned = rawBytes.slice(0);"
-                + "          pcmBuffer = aligned.buffer;"
-                + "          pcmOffset = aligned.byteOffset;"
-                + "          pcmLength = aligned.byteLength;"
-                + "        }"
-
-                + "        let pcm16 = new Int16Array(pcmBuffer, pcmOffset, Math.floor(pcmLength / 2));"
+                + "        let pcm16 = new Int16Array(rawBytes.buffer, rawBytes.byteOffset, Math.floor(rawBytes.byteLength / 2));"
                 + "        if (pcm16.length === 0) continue;"
 
                 + "        let float32 = new Float32Array(pcm16.length);"
