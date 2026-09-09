@@ -1,152 +1,751 @@
 package com.example.detectcamera;
 
 import android.content.Context;
+import android.graphics.Bitmap;
+import android.graphics.PixelFormat;
 import android.hardware.display.DisplayManager;
 import android.hardware.display.VirtualDisplay;
+import android.media.Image;
+import android.media.ImageReader;
 import android.media.projection.MediaProjection;
-import android.os.Build;
 import android.os.Handler;
 import android.os.HandlerThread;
+import android.util.DisplayMetrics;
 import android.util.Log;
-import android.view.Display;
 import android.view.Surface;
-import android.view.WindowManager;
+
+import java.io.ByteArrayOutputStream;
+import java.nio.ByteBuffer;
+
+public final class ScreenCaptureController {
+
+
+private static final String TAG = "ScreenCapture";
+
+/*
+ * Nombre del VirtualDisplay.
+ *
+ * Android lo registra como una pantalla virtual de presentación.
+ * El WebServer NO es el display: es el destino de los frames
+ * obtenidos desde el ImageReader.
+ */
+private static final String DISPLAY_NAME = "Prux-WebServer-Display";
+
+/*
+ * Límite para no generar frames gigantes.
+ */
+private static final int MAX_WIDTH = 1280;
+
+/*
+ * Calidad JPEG.
+ *
+ * 55 ofrece una relación bastante buena entre:
+ * - fluidez
+ * - consumo de CPU
+ * - tráfico de red
+ * - tamaño del frame
+ */
+private static final int JPEG_QUALITY = 55;
+
+private final Context context;
+private final WebServer webServer;
+private final MediaProjection mediaProjection;
+
+private HandlerThread captureThread;
+private Handler captureHandler;
+
+private ImageReader imageReader;
+private VirtualDisplay virtualDisplay;
+
+private int width;
+private int height;
+private int densityDpi;
+
+private volatile boolean released;
+private volatile boolean projectionStopped;
+
+/*
+ * Evita procesar simultáneamente varios frames.
+ */
+private final Object frameLock = new Object();
+
+private volatile boolean processingFrame;
+
+public ScreenCaptureController(
+        Context context,
+        MediaProjection mediaProjection,
+        WebServer webServer
+) {
+    this.context = context.getApplicationContext();
+    this.mediaProjection = mediaProjection;
+    this.webServer = webServer;
+}
 
 /**
- * High-performance screen pipeline:
- * MediaProjection -> VirtualDisplay -> encoder Surface -> hardware H.264.
- * No ImageReader, Bitmap or JPEG is used for the screen.
+ * Inicia:
+ *
+ * MediaProjection
+ *      ↓
+ * VirtualDisplay
+ *      ↓
+ * ImageReader
+ *      ↓
+ * JPEG
+ *      ↓
+ * WebServer
  */
-public final class ScreenCaptureController {
-    private static final String TAG = "ScreenCapture";
-    private static final String DISPLAY_NAME = "Prux-Screen-VirtualDisplay";
-    private static final int MAX_LONG_SIDE = 1280;
+public synchronized void start() {
 
-    private final Context context;
-    private final MediaProjection mediaProjection;
-    private final WebServer webServer;
-
-    private HandlerThread thread;
-    private Handler handler;
-    private VirtualDisplay virtualDisplay;
-    private H264ScreenEncoder encoder;
-    private volatile boolean released;
-    private volatile boolean projectionStopped;
-
-    private int width;
-    private int height;
-    private int densityDpi;
-
-    public ScreenCaptureController(Context context, MediaProjection mediaProjection, WebServer webServer) {
-        this.context = context.getApplicationContext();
-        this.mediaProjection = mediaProjection;
-        this.webServer = webServer;
+    if (released) {
+        Log.w(TAG, "start() ignorado: controlador liberado.");
+        return;
     }
 
-    public synchronized void start() {
-        if (released || projectionStopped || mediaProjection == null || virtualDisplay != null) return;
-        try {
-            readDisplaySize();
-            thread = new HandlerThread("PruxVirtualDisplayEncoder");
-            thread.start();
-            handler = new Handler(thread.getLooper());
+    if (projectionStopped) {
+        Log.w(TAG, "start() ignorado: MediaProjection detenida.");
+        return;
+    }
 
-            mediaProjection.registerCallback(new MediaProjection.Callback() {
-                @Override public void onStop() {
+    if (mediaProjection == null) {
+        Log.e(TAG, "MediaProjection es null.");
+        return;
+    }
+
+    if (virtualDisplay != null) {
+        Log.d(TAG, "VirtualDisplay ya está activo.");
+        return;
+    }
+
+    readDisplayMetrics();
+
+    createCaptureThread();
+
+    registerProjectionCallback();
+
+    createImageReader();
+
+    createVirtualDisplay();
+}
+
+/**
+ * Obtiene la resolución real disponible para la captura.
+ */
+private void readDisplayMetrics() {
+
+    DisplayMetrics metrics =
+            context.getResources().getDisplayMetrics();
+
+    width = Math.max(1, metrics.widthPixels);
+    height = Math.max(1, metrics.heightPixels);
+    densityDpi = Math.max(1, metrics.densityDpi);
+
+    /*
+     * Limitar únicamente el ancho.
+     * Se conserva la relación de aspecto.
+     */
+    if (width > MAX_WIDTH) {
+
+        int originalWidth = width;
+
+        width = MAX_WIDTH;
+
+        height = Math.max(
+                1,
+                Math.round(
+                        height *
+                                (width / (float) originalWidth)
+                )
+        );
+    }
+
+    Log.i(
+            TAG,
+            "Resolución de captura: "
+                    + width
+                    + "x"
+                    + height
+                    + " @"
+                    + densityDpi
+                    + "dpi"
+    );
+}
+
+/**
+ * Hilo dedicado para captura.
+ */
+private void createCaptureThread() {
+
+    captureThread =
+            new HandlerThread("PruxScreenCapture");
+
+    captureThread.start();
+
+    captureHandler =
+            new Handler(captureThread.getLooper());
+}
+
+/**
+ * Escucha cuándo MediaProjection deja de existir.
+ */
+private void registerProjectionCallback() {
+
+    mediaProjection.registerCallback(
+            new MediaProjection.Callback() {
+
+                @Override
+                public void onStop() {
+
                     projectionStopped = true;
-                    Log.w(TAG, "MediaProjection detenida");
-                    releaseAsync();
+
+                    Log.w(
+                            TAG,
+                            "MediaProjection fue detenida por Android."
+                    );
+
+                    /*
+                     * No hacemos llamadas peligrosas desde el callback.
+                     * release() se puede ejecutar posteriormente.
+                     */
                 }
-            }, handler);
+            },
+            captureHandler
+    );
+}
 
-            encoder = new H264ScreenEncoder(width, height, new H264ScreenEncoder.Listener() {
-                @Override public void onFormat(byte[] config, int w, int h) {
-                    if (webServer != null) webServer.actualizarVideoConfig(config, w, h);
-                }
+/**
+ * Surface que recibe la salida del VirtualDisplay.
+ */
+private void createImageReader() {
 
-                @Override public void onFrame(byte[] data, boolean keyFrame, long ptsUs) {
-                    if (webServer != null && !released && !projectionStopped) {
-                        webServer.publicarVideoFrame(data, keyFrame, ptsUs);
-                    }
-                }
-
-                @Override public void onError(Throwable error) {
-                    if (!released) Log.e(TAG, "Error del encoder H.264", error);
-                }
-            });
-            encoder.start();
-
-            Surface surface = encoder.getInputSurface();
-            if (surface == null || !surface.isValid()) throw new IllegalStateException("Encoder Surface inválida");
-
-            int flags = DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR |
-                    DisplayManager.VIRTUAL_DISPLAY_FLAG_PRESENTATION;
-
-            virtualDisplay = mediaProjection.createVirtualDisplay(
-                    DISPLAY_NAME,
+    imageReader =
+            ImageReader.newInstance(
                     width,
                     height,
-                    densityDpi,
-                    flags,
-                    surface,
-                    new VirtualDisplay.Callback() {
-                        @Override public void onPaused() { Log.d(TAG, "VirtualDisplay pausado"); }
-                        @Override public void onResumed() { Log.d(TAG, "VirtualDisplay reanudado"); }
-                        @Override public void onStopped() { Log.w(TAG, "VirtualDisplay detenido"); }
-                    },
-                    handler
+                    PixelFormat.RGBA_8888,
+                    3
             );
 
-            if (virtualDisplay == null) throw new IllegalStateException("VirtualDisplay == null");
-            Log.i(TAG, "Pipeline activo: VirtualDisplay -> Surface -> H.264 " + width + "x" + height + " @60fps");
+    imageReader.setOnImageAvailableListener(
+            this::onImageAvailable,
+            captureHandler
+    );
+}
+
+/**
+ * Crea la pantalla virtual.
+ *
+ * La idea es:
+ *
+ * Display físico
+ *       ↓
+ * MediaProjection
+ *       ↓
+ * VirtualDisplay
+ *       ↓
+ * ImageReader Surface
+ */
+private void createVirtualDisplay() {
+
+    try {
+
+        int flags =
+                DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR
+                        |
+                DisplayManager.VIRTUAL_DISPLAY_FLAG_PRESENTATION;
+
+        Surface outputSurface =
+                imageReader.getSurface();
+
+        if (outputSurface == null ||
+                !outputSurface.isValid()) {
+
+            throw new IllegalStateException(
+                    "La Surface del ImageReader no es válida."
+            );
+        }
+
+        virtualDisplay =
+                mediaProjection.createVirtualDisplay(
+                        DISPLAY_NAME,
+
+                        width,
+                        height,
+                        densityDpi,
+
+                        flags,
+
+                        outputSurface,
+
+                        new VirtualDisplay.Callback() {
+
+                            @Override
+                            public void onPaused() {
+
+                                Log.d(
+                                        TAG,
+                                        "VirtualDisplay pausado."
+                                );
+                            }
+
+                            @Override
+                            public void onResumed() {
+
+                                Log.d(
+                                        TAG,
+                                        "VirtualDisplay reanudado."
+                                );
+
+                                reaplicarSurface();
+                            }
+
+                            @Override
+                            public void onStopped() {
+
+                                Log.w(
+                                        TAG,
+                                        "VirtualDisplay detenido."
+                                );
+                            }
+                        },
+
+                        captureHandler
+                );
+
+        if (virtualDisplay == null) {
+
+            throw new IllegalStateException(
+                    "createVirtualDisplay() devolvió null."
+            );
+        }
+
+        Log.i(
+                TAG,
+                "VirtualDisplay Prux creado correctamente."
+        );
+
+        Log.i(
+                TAG,
+                "MediaProjection → VirtualDisplay → ImageReader → WebServer"
+        );
+
+    } catch (Throwable t) {
+
+        Log.e(
+                TAG,
+                "No se pudo crear el VirtualDisplay.",
+                t
+        );
+
+        closeReaderAndThread();
+    }
+}
+
+/**
+ * Recibe cada frame producido por el VirtualDisplay.
+ */
+private void onImageAvailable(ImageReader reader) {
+
+    /*
+     * Si ya estamos procesando un frame, descartamos éste.
+     *
+     * Esto evita que el WebServer acumule frames atrasados.
+     */
+    synchronized (frameLock) {
+
+        if (processingFrame) {
+
+            Image discarded = null;
+
+            try {
+                discarded = reader.acquireLatestImage();
+            } catch (Throwable ignored) {
+            } finally {
+
+                if (discarded != null) {
+                    try {
+                        discarded.close();
+                    } catch (Throwable ignored) {
+                    }
+                }
+            }
+
+            return;
+        }
+
+        processingFrame = true;
+    }
+
+    Image image = null;
+    Bitmap fullBitmap = null;
+    Bitmap cleanBitmap = null;
+
+    try {
+
+        if (released || projectionStopped) {
+            return;
+        }
+
+        /*
+         * acquireLatestImage() es importante:
+         *
+         * No queremos enviar frames antiguos.
+         * Siempre interesa el frame más reciente.
+         */
+        image = reader.acquireLatestImage();
+
+        if (image == null) {
+            return;
+        }
+
+        Image.Plane[] planes =
+                image.getPlanes();
+
+        if (planes == null ||
+                planes.length == 0) {
+
+            return;
+        }
+
+        Image.Plane plane =
+                planes[0];
+
+        ByteBuffer buffer =
+                plane.getBuffer();
+
+        if (buffer == null) {
+            return;
+        }
+
+        int pixelStride =
+                plane.getPixelStride();
+
+        int rowStride =
+                plane.getRowStride();
+
+        if (pixelStride <= 0 ||
+                rowStride <= 0) {
+
+            return;
+        }
+
+        /*
+         * Android puede agregar padding al final
+         * de cada fila.
+         */
+        int rowPadding =
+                Math.max(
+                        0,
+                        rowStride -
+                                pixelStride * width
+                );
+
+        int bitmapWidth =
+                width +
+                        rowPadding /
+                                pixelStride;
+
+        /*
+         * Seguridad contra dimensiones inválidas.
+         */
+        if (bitmapWidth < width ||
+                bitmapWidth <= 0 ||
+                height <= 0) {
+
+            return;
+        }
+
+        buffer.rewind();
+
+        fullBitmap =
+                Bitmap.createBitmap(
+                        bitmapWidth,
+                        height,
+                        Bitmap.Config.ARGB_8888
+                );
+
+        fullBitmap.copyPixelsFromBuffer(buffer);
+
+        /*
+         * Eliminamos el padding lateral.
+         */
+        cleanBitmap =
+                Bitmap.createBitmap(
+                        fullBitmap,
+                        0,
+                        0,
+                        width,
+                        height
+                );
+
+        ByteArrayOutputStream baos =
+                new ByteArrayOutputStream(
+                        Math.max(
+                                16 * 1024,
+                                width * height / 8
+                        )
+                );
+
+        boolean compressed =
+                cleanBitmap.compress(
+                        Bitmap.CompressFormat.JPEG,
+                        JPEG_QUALITY,
+                        baos
+                );
+
+        if (!compressed) {
+            return;
+        }
+
+        byte[] jpeg =
+                baos.toByteArray();
+
+        if (jpeg.length == 0) {
+            return;
+        }
+
+        /*
+         * Entrega el frame al WebServer.
+         */
+        if (webServer != null &&
+                !released &&
+                !projectionStopped) {
+
+            webServer.actualizarFramePantalla(
+                    jpeg
+            );
+        }
+
+    } catch (Throwable t) {
+
+        if (!released) {
+
+            Log.e(
+                    TAG,
+                    "Error procesando frame.",
+                    t
+            );
+        }
+
+    } finally {
+
+        if (image != null) {
+
+            try {
+                image.close();
+            } catch (Throwable ignored) {
+            }
+        }
+
+        if (cleanBitmap != null &&
+                !cleanBitmap.isRecycled()) {
+
+            try {
+                cleanBitmap.recycle();
+            } catch (Throwable ignored) {
+            }
+        }
+
+        if (fullBitmap != null &&
+                !fullBitmap.isRecycled()) {
+
+            try {
+                fullBitmap.recycle();
+            } catch (Throwable ignored) {
+            }
+        }
+
+        synchronized (frameLock) {
+            processingFrame = false;
+        }
+    }
+}
+
+/**
+ * Vuelve a conectar la Surface al VirtualDisplay.
+ *
+ * Útil después de:
+ * - pausa
+ * - reanudación
+ * - cambios de superficie
+ */
+private synchronized void reaplicarSurface() {
+
+    if (released ||
+            projectionStopped ||
+            virtualDisplay == null ||
+            imageReader == null) {
+
+        return;
+    }
+
+    try {
+
+        Surface surface =
+                imageReader.getSurface();
+
+        if (surface == null ||
+                !surface.isValid()) {
+
+            Log.w(
+                    TAG,
+                    "La Surface no es válida."
+            );
+
+            return;
+        }
+
+        virtualDisplay.setSurface(
+                surface
+        );
+
+        virtualDisplay.resize(
+                width,
+                height,
+                densityDpi
+        );
+
+        Log.d(
+                TAG,
+                "Surface del WebServer reaplicada al VirtualDisplay."
+        );
+
+    } catch (Throwable t) {
+
+        Log.w(
+                TAG,
+                "No se pudo reaplicar la Surface.",
+                t
+        );
+    }
+}
+
+/**
+ * Indica si la cadena de captura está funcionando.
+ */
+public synchronized boolean isRunning() {
+
+    return !released
+            && !projectionStopped
+            && virtualDisplay != null
+            && imageReader != null;
+}
+
+/**
+ * Libera todos los recursos.
+ */
+public synchronized void release() {
+
+    if (released) {
+        return;
+    }
+
+    released = true;
+
+    /*
+     * Primero detener el VirtualDisplay.
+     */
+    try {
+
+        if (virtualDisplay != null) {
+
+            virtualDisplay.setSurface(null);
+
+            virtualDisplay.release();
+
+            virtualDisplay = null;
+        }
+
+    } catch (Throwable t) {
+
+        Log.w(
+                TAG,
+                "Error liberando VirtualDisplay.",
+                t
+        );
+    }
+
+    /*
+     * Después ImageReader + hilo.
+     */
+    closeReaderAndThread();
+
+    /*
+     * El WebServer deja de publicar el frame anterior.
+     */
+    if (webServer != null) {
+
+        try {
+
+            webServer.actualizarFramePantalla(
+                    null
+            );
+
         } catch (Throwable t) {
-            Log.e(TAG, "No se pudo iniciar la captura virtual", t);
-            release();
+
+            Log.w(
+                    TAG,
+                    "No se pudo limpiar el frame del WebServer.",
+                    t
+            );
         }
     }
 
-    private void readDisplaySize() {
-        WindowManager wm = (WindowManager) context.getSystemService(Context.WINDOW_SERVICE);
-        int realW = 0, realH = 0;
-        if (Build.VERSION.SDK_INT >= 30 && wm != null) {
-            android.graphics.Rect b = wm.getMaximumWindowMetrics().getBounds();
-            realW = b.width(); realH = b.height();
-        } else if (wm != null) {
-            Display d = wm.getDefaultDisplay();
-            android.graphics.Point p = new android.graphics.Point();
-            d.getRealSize(p); realW = p.x; realH = p.y;
+    Log.i(
+            TAG,
+            "ScreenCaptureController liberado."
+    );
+}
+
+/**
+ * Cierra ImageReader y el hilo de captura.
+ */
+private void closeReaderAndThread() {
+
+    try {
+
+        if (imageReader != null) {
+
+            imageReader.setOnImageAvailableListener(
+                    null,
+                    null
+            );
+
+            imageReader.close();
+
+            imageReader = null;
         }
-        if (realW <= 0 || realH <= 0) {
-            realW = context.getResources().getDisplayMetrics().widthPixels;
-            realH = context.getResources().getDisplayMetrics().heightPixels;
+
+    } catch (Throwable t) {
+
+        Log.w(
+                TAG,
+                "Error cerrando ImageReader.",
+                t
+        );
+    }
+
+    try {
+
+        if (captureThread != null) {
+
+            captureThread.quitSafely();
+
+            captureThread = null;
+            captureHandler = null;
         }
-        densityDpi = Math.max(160, context.getResources().getDisplayMetrics().densityDpi);
-        float scale = Math.min(1f, MAX_LONG_SIDE / (float)Math.max(realW, realH));
-        width = even(Math.max(2, Math.round(realW * scale)));
-        height = even(Math.max(2, Math.round(realH * scale)));
+
+    } catch (Throwable t) {
+
+        Log.w(
+                TAG,
+                "Error cerrando hilo de captura.",
+                t
+        );
     }
 
-    private static int even(int n) { return (n & 1) == 0 ? n : n - 1; }
-
-    public synchronized boolean isRunning() {
-        return !released && !projectionStopped && virtualDisplay != null && encoder != null;
+    synchronized (frameLock) {
+        processingFrame = false;
     }
+}
 
-    private void releaseAsync() {
-        Handler h = handler;
-        if (h != null) h.post(this::release);
-    }
-
-    public synchronized void release() {
-        if (released) return;
-        released = true;
-        try { if (virtualDisplay != null) { virtualDisplay.setSurface(null); virtualDisplay.release(); } } catch (Throwable ignored) {}
-        virtualDisplay = null;
-        try { if (encoder != null) encoder.release(); } catch (Throwable ignored) {}
-        encoder = null;
-        if (webServer != null) webServer.limpiarVideo();
-        try { if (thread != null) thread.quitSafely(); } catch (Throwable ignored) {}
-        thread = null; handler = null;
-        Log.i(TAG, "Captura virtual liberada");
-    }
 }
