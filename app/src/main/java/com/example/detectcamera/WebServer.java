@@ -58,28 +58,6 @@ public class WebServer extends NanoHTTPD {
         }
     }
 
-    /** Publica configuración H.264 al canal WebSocket de pantalla. */
-    public void actualizarVideoConfig(byte[] config, int width, int height) {
-        ScreenWebSocketServer ws = WebServerManager.getScreenWebSocketServer();
-        if (ws != null) ws.setVideoConfig(config, width, height);
-    }
-
-    /** Publica un frame H.264 sin convertirlo a Bitmap/JPEG. */
-    public void publicarVideoFrame(byte[] data, boolean keyFrame, long timestampUs) {
-        ScreenWebSocketServer ws = WebServerManager.getScreenWebSocketServer();
-        if (ws != null) ws.publishFrame(data, keyFrame, timestampUs);
-    }
-
-    public void limpiarVideo() {
-        ScreenWebSocketServer ws = WebServerManager.getScreenWebSocketServer();
-        if (ws != null) ws.clearVideoConfig();
-        synchronized (frameLock) {
-            ultimoFramePantalla = null;
-            secuenciaPantalla++;
-            frameLock.notifyAll();
-        }
-    }
-
     public void detenerAudio() {
         audioStreamManager.detenerCaptura();
     }
@@ -304,15 +282,6 @@ public class WebServer extends NanoHTTPD {
             return newFixedLengthResponse(Response.Status.OK, "application/json", "{\"status\":\"ok\", \"modo\":" + modoCapturaPantalla + "}");
         }
 
-        if ("/api/screen_ws_token".equals(uri)) {
-            String token = WebServerManager.getScreenWsToken();
-            return newFixedLengthResponse(
-                    Response.Status.OK,
-                    "application/json",
-                    "{\"port\":8081,\"token\":\"" + token + "\"}"
-            );
-        }
-
         String html = "<!DOCTYPE html>"
                 + "<html>"
                 + "<head>"
@@ -348,12 +317,12 @@ public class WebServer extends NanoHTTPD {
                 + "  <div class='card-header'>"
                 + "    <h3>Transmisión de Pantalla</h3>"
                 + "    <div>"
-                + "      <button class='btn-tool' onclick=\"rotarPantalla()\">🔄 90°</button>"
+                + "      <button class='btn-tool' onclick=\"rotarImagen('screenImg')\">🔄 90°</button>"
                 + "      <button class='btn-tool' onclick=\"pantallaCompleta('cardScreen')\">⛶ Max</button>"
                 + "    </div>"
                 + "  </div>"
                 + "  <div class='video-wrapper'>"
-                + "    <canvas id='screenCanvas' class='stream' aria-label='Pantalla'></canvas>"
+                + "    <img id='screenImg' class='stream' src='/screen_stream' alt='Esperando...'>"
                 + "  </div>"
                 + "  <div style='margin-top: 8px; display: flex; justify-content: center; gap: 4px;'>"
                 + "    <button class='btn-on' onclick=\"fetch('/api/screen?action=start')\">Modo Normal</button>"
@@ -400,10 +369,6 @@ public class WebServer extends NanoHTTPD {
                 + "  var listeningMode = 0;"
                 + "  var audioCtx = null;"
                 + "  var controller = null;"
-                + "  var screenWs = null;"
-                + "  var screenDecoder = null;"
-                + "  var screenConfigured = false;"
-                + "  var screenRotation = 0;"
 
                 + "  function rotarImagen(id) {"
                 + "    rotaciones[id] = (rotaciones[id] + 90) % 360;"
@@ -418,70 +383,6 @@ public class WebServer extends NanoHTTPD {
                 + "      if (document.exitFullscreen) document.exitFullscreen();"
                 + "    }"
                 + "  }"
-
-                + "  function rotarPantalla() { screenRotation = (screenRotation + 90) % 360; document.getElementById('screenCanvas').style.transform = 'rotate(' + screenRotation + 'deg)'; }"
-
-                + "  function screenFallback() { var c=document.getElementById('screenCanvas'); var img=document.createElement('img'); img.id='screenFallbackImg'; img.className='stream'; img.src='/screen_stream?t=' + Date.now(); c.replaceWith(img); }"
-
-                + "  async function iniciarScreenWS() {"
-                + "    if (!window.WebSocket || !window.VideoDecoder || !window.EncodedVideoChunk) { screenFallback(); return; }"
-                + "    try {"
-                + "      const r = await fetch('/api/screen_ws_token?t=' + Date.now()); const info = await r.json();"
-                + "      const url = 'ws://' + location.hostname + ':' + info.port + '/screen?token=' + encodeURIComponent(info.token);"
-                + "      screenWs = new WebSocket(url); screenWs.binaryType = 'arraybuffer';"
-                + "      screenWs.onmessage = function(ev) {"
-                + "        if (typeof ev.data === 'string') {"
-                + "          const cfg = JSON.parse(ev.data);"
-                + "          if (cfg.type === 'config') {"
-                + "            const canvas = document.getElementById('screenCanvas');"
-                + "            canvas.width = cfg.width;"
-                + "            canvas.height = cfg.height;"
-                + "            if (screenDecoder) try { screenDecoder.close(); } catch(e) {}"
-                + "            screenDecoder = new VideoDecoder({"
-                + "              output: function(frame) {"
-                + "                canvas.getContext('2d', { alpha: false, desynchronized: true })"
-                + "                      .drawImage(frame, 0, 0, canvas.width, canvas.height);"
-                + "                frame.close();"
-                + "              },"
-                + "              error: function(e) { console.error('VideoDecoder', e); }"
-                + "            });"
-                + "            screenDecoder.configure({"
-                + "              codec: cfg.codec || 'avc1.42C028',"
-                + "              optimizeForLatency: true,"
-                + "              hardwareAcceleration: 'prefer-hardware'"
-                + "            });"
-                + "            screenConfigured = true;"
-                + "          }"
-                + "        } else if (screenDecoder && screenConfigured) {"
-                + "          const b = new Uint8Array(ev.data);"
-                + "          if (b.length <= 9) return;"
-                + "          const key = b[0] === 1;"
-                + "          const dv = new DataView(b.buffer, b.byteOffset, b.byteLength);"
-                + "          const ts = Number(dv.getBigInt64(1, false));"
-                + "          const payload = b.subarray(9);"
-                + "          try {"
-                + "            screenDecoder.decode(new EncodedVideoChunk({"
-                + "              type: key ? 'key' : 'delta',"
-                + "              timestamp: ts,"
-                + "              data: payload"
-                + "            }));"
-                + "          } catch(e) { console.warn('decode', e); }"
-                + "        }"
-                + "      };"
-                + "      screenWs.onclose = function() {"
-                + "        screenConfigured = false;"
-                + "        setTimeout(iniciarScreenWS, 1000);"
-                + "      };"
-                + "      screenWs.onerror = function() {"
-                + "        try { screenWs.close(); } catch(e) {}"
-                + "      };"
-                + "    } catch(e) {"
-                + "      console.error(e);"
-                + "      screenFallback();"
-                + "    }"
-                + "  }"
-
-                + "  iniciarScreenWS();"
 
                 + "  async function toggleAudio(modoDeseado) {"
                 + "    if (listeningMode === modoDeseado) {"
