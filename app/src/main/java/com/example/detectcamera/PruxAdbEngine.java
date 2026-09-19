@@ -164,6 +164,7 @@ public final class PruxAdbEngine {
     /**
      * Encola reconexión con backoff exponencial. Si el intento falla, se
      * reprograma automáticamente sin esperar al siguiente tick del monitor.
+     * Idempotente: si ya hay uno en curso, esta llamada no hace nada.
      */
     private void requestReconnect() {
         if (!reconnectRunning.compareAndSet(false, true)) {
@@ -240,7 +241,8 @@ public final class PruxAdbEngine {
      * Garantiza conexión activa bajo lock para evitar dobles conexiones
      * concurrentes desde varios comandos.
      *
-     * Captura AdbPairingRequiredException para evitar errores de compilación.
+     * La reconexión la dispara el llamador (executeAllowed vía catch) si
+     * este método devuelve false, así que aquí no se programa nada.
      */
     private boolean ensureConnected(@NonNull AbsAdbConnectionManager manager)
             throws IOException, InterruptedException {
@@ -350,7 +352,12 @@ public final class PruxAdbEngine {
                     message = "Emparejamiento completado; esperando conexión ADB";
                 }
 
+                // Arranca el monitor y, si la conexión no fue inmediata,
+                // dispara un intento ahora sin esperar al primer tick.
                 startPersistentMonitoring();
+                if (!connectedNow) {
+                    requestReconnect();
+                }
 
             } catch (Throwable t) {
                 synchronized (connectionLock) {
@@ -402,15 +409,19 @@ public final class PruxAdbEngine {
                 } else {
                     markDisconnected();
                     message = "No se encontró una conexión ADB emparejada";
+                    // Fuerza un intento inmediato en lugar de esperar al monitor.
+                    requestReconnect();
                 }
 
             } catch (AdbPairingRequiredException e) {
                 markDisconnected();
                 message = "Se requiere emparejamiento manual";
+                requestReconnect();
             } catch (Throwable t) {
                 markDisconnected();
                 message = friendly(t);
                 Log.e(TAG, "reconnect", t);
+                requestReconnect();
             }
 
             post(callback, success, message);
