@@ -9,6 +9,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import java.io.BufferedReader;
+import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ExecutorService;
@@ -238,8 +239,13 @@ public final class PruxAdbEngine {
     /**
      * Garantiza conexión activa bajo lock para evitar dobles conexiones
      * concurrentes desde varios comandos.
+     *
+     * Declara {@link IOException} porque {@code connect} y {@code autoConnect}
+     * de la librería ADB la lanzan. El llamador (executeAllowed) ya la captura
+     * vía Throwable, así que no hace falta envolverla aquí.
      */
-    private boolean ensureConnected(@NonNull AbsAdbConnectionManager manager) {
+    private boolean ensureConnected(@NonNull AbsAdbConnectionManager manager)
+            throws IOException {
         synchronized (connectionLock) {
             if (connected) {
                 return true;
