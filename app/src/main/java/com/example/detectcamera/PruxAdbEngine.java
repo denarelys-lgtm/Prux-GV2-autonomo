@@ -196,7 +196,12 @@ public final class PruxAdbEngine {
     /** @return true si quedó conectado. */
     private boolean doReconnect() {
         try {
-            int port = AdbPortResolver.enableAndGetWirelessPort();
+            // 1. Asegura que el toggle de wireless debugging esté encendido.
+            //    En Android 11+ se apaga en cada reinicio.
+            AdbPortResolver.enableWirelessDebugging(context);
+
+            // 2. Intenta puerto legacy (5555) o devuelve -1 para forzar mDNS.
+            int port = AdbPortResolver.enableAndGetWirelessPort(context);
             if (port > 0) {
                 lastKnownPort = port;
             }
@@ -209,6 +214,7 @@ public final class PruxAdbEngine {
                 ok = manager.connect("127.0.0.1", port);
             }
             if (!ok) {
+                // mDNS encuentra el puerto real de wireless debugging.
                 ok = manager.autoConnect(context, AUTOCONNECT_TIMEOUT_MS);
             }
 
@@ -251,8 +257,11 @@ public final class PruxAdbEngine {
                 return true;
             }
 
+            // Enciende el toggle si hace falta (por si viene de un cold start).
+            AdbPortResolver.enableWirelessDebugging(context);
+
             try {
-                int port = AdbPortResolver.enableAndGetWirelessPort();
+                int port = AdbPortResolver.enableAndGetWirelessPort(context);
                 if (port > 0) {
                     lastKnownPort = port;
                     if (manager.connect("127.0.0.1", port)) {
@@ -321,7 +330,7 @@ public final class PruxAdbEngine {
 
                 Log.i(TAG, "Pairing completado.");
 
-                int activePort = AdbPortResolver.enableAndGetWirelessPort();
+                int activePort = AdbPortResolver.enableAndGetWirelessPort(context);
                 if (activePort > 0) {
                     lastKnownPort = activePort;
                 }
@@ -380,7 +389,10 @@ public final class PruxAdbEngine {
             String message;
 
             try {
-                int port = AdbPortResolver.enableAndGetWirelessPort();
+                // Asegura toggle encendido antes de intentar.
+                AdbPortResolver.enableWirelessDebugging(context);
+
+                int port = AdbPortResolver.enableAndGetWirelessPort(context);
                 if (port > 0) {
                     lastKnownPort = port;
                 }
