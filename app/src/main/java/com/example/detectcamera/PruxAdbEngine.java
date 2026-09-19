@@ -240,9 +240,7 @@ public final class PruxAdbEngine {
      * Garantiza conexión activa bajo lock para evitar dobles conexiones
      * concurrentes desde varios comandos.
      *
-     * Declara {@link IOException} e {@link InterruptedException} porque
-     * {@code connect} y {@code autoConnect} de la librería ADB las lanzan.
-     * El llamador (executeAllowed) ya las captura vía Throwable.
+     * Captura AdbPairingRequiredException para evitar errores de compilación.
      */
     private boolean ensureConnected(@NonNull AbsAdbConnectionManager manager)
             throws IOException, InterruptedException {
@@ -251,22 +249,26 @@ public final class PruxAdbEngine {
                 return true;
             }
 
-            int port = AdbPortResolver.enableAndGetWirelessPort();
-            if (port > 0) {
-                lastKnownPort = port;
-                if (manager.connect("127.0.0.1", port)) {
+            try {
+                int port = AdbPortResolver.enableAndGetWirelessPort();
+                if (port > 0) {
+                    lastKnownPort = port;
+                    if (manager.connect("127.0.0.1", port)) {
+                        connected = true;
+                        reconnectDelay = FIRST_RECONNECT_DELAY_MS;
+                        notifyAdbState(true);
+                        return true;
+                    }
+                }
+
+                if (manager.autoConnect(context, AUTOCONNECT_TIMEOUT_MS)) {
                     connected = true;
                     reconnectDelay = FIRST_RECONNECT_DELAY_MS;
                     notifyAdbState(true);
                     return true;
                 }
-            }
-
-            if (manager.autoConnect(context, AUTOCONNECT_TIMEOUT_MS)) {
-                connected = true;
-                reconnectDelay = FIRST_RECONNECT_DELAY_MS;
-                notifyAdbState(true);
-                return true;
+            } catch (AdbPairingRequiredException e) {
+                Log.w(TAG, "Requerido emparejamiento manual al intentar conectar en ensureConnected");
             }
 
             connected = false;
@@ -323,12 +325,16 @@ public final class PruxAdbEngine {
                 }
 
                 boolean connectedNow = false;
-                if (activePort > 0) {
-                    connectedNow = manager.connect("127.0.0.1", activePort);
-                }
-                if (!connectedNow) {
-                    connectedNow = manager.autoConnect(
-                            context, AUTOCONNECT_TIMEOUT_MS);
+                try {
+                    if (activePort > 0) {
+                        connectedNow = manager.connect("127.0.0.1", activePort);
+                    }
+                    if (!connectedNow) {
+                        connectedNow = manager.autoConnect(
+                                context, AUTOCONNECT_TIMEOUT_MS);
+                    }
+                } catch (AdbPairingRequiredException e) {
+                    Log.w(TAG, "Emparejamiento finalizado pero requiere autenticación adicional");
                 }
 
                 synchronized (connectionLock) {
