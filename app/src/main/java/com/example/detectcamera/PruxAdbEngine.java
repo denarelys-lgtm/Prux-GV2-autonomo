@@ -240,12 +240,12 @@ public final class PruxAdbEngine {
      * Garantiza conexión activa bajo lock para evitar dobles conexiones
      * concurrentes desde varios comandos.
      *
-     * Declara {@link IOException} porque {@code connect} y {@code autoConnect}
-     * de la librería ADB la lanzan. El llamador (executeAllowed) ya la captura
-     * vía Throwable, así que no hace falta envolverla aquí.
+     * Declara {@link IOException} e {@link InterruptedException} porque
+     * {@code connect} y {@code autoConnect} de la librería ADB las lanzan.
+     * El llamador (executeAllowed) ya las captura vía Throwable.
      */
     private boolean ensureConnected(@NonNull AbsAdbConnectionManager manager)
-            throws IOException {
+            throws IOException, InterruptedException {
         synchronized (connectionLock) {
             if (connected) {
                 return true;
