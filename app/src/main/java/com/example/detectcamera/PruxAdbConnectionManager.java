@@ -206,6 +206,9 @@ public final class PruxAdbConnectionManager extends AbsAdbConnectionManager {
     /**
      * Wraps {@code fileName} (inside {@code filesDir}) in an {@link EncryptedFile}
      * backed by an AES-256-GCM master key stored in the Android Keystore.
+     *
+     * <p>Note the argument order of {@link EncryptedFile.Builder}: it is
+     * {@code (Context, File, MasterKey, FileEncryptionScheme)}.
      */
     private static EncryptedFile openEncrypted(Context context, String fileName) throws Exception {
         MasterKey masterKey = new MasterKey.Builder(context)
@@ -213,8 +216,8 @@ public final class PruxAdbConnectionManager extends AbsAdbConnectionManager {
                 .build();
 
         return new EncryptedFile.Builder(
-                new File(context.getFilesDir(), fileName),
                 context,
+                new File(context.getFilesDir(), fileName),
                 masterKey,
                 EncryptedFile.FileEncryptionScheme.AES256_GCM_HKDF_4KB)
                 .build();
