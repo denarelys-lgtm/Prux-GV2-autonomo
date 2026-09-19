@@ -216,7 +216,7 @@ public final class PruxAdbConnectionManager extends AbsAdbConnectionManager {
                 new File(context.getFilesDir(), fileName),
                 context,
                 masterKey,
-                EncryptedFile.FileEncryptionScheme.AES256_HMAC)
+                EncryptedFile.FileEncryptionScheme.AES256_GCM_HKDF_4KB)
                 .build();
     }
 
