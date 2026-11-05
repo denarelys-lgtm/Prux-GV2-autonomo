@@ -70,7 +70,6 @@ public class CameraService extends Service {
         super.onCreate();
         createNotificationChannel();
 
-        // Aplicar exenciones mediante el bridge ADB autorizado para reducir restricciones de background
         PruxBackgroundBypass.aplicarExencionesBackground(this);
 
         try {
@@ -161,10 +160,7 @@ public class CameraService extends Service {
                     startForeground(NOTIFICATION_ID, notification);
                 }
             } catch (SecurityException e) {
-                Log.w("CameraService", "SecurityException al iniciar FGS. Reintentando con bridge ADB y fallback.", e);
-                
                 PruxBackgroundBypass.aplicarExencionesBackground(this);
-
                 try {
                     if (Build.VERSION.SDK_INT >= 34) {
                         startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
@@ -172,7 +168,6 @@ public class CameraService extends Service {
                         startForeground(NOTIFICATION_ID, notification);
                     }
                 } catch (Exception ex) {
-                    Log.e("CameraService", "Fallback final para evitar crash del servicio", ex);
                     startForeground(NOTIFICATION_ID, notification);
                 }
             }
@@ -248,6 +243,9 @@ public class CameraService extends Service {
     private synchronized void iniciarProyeccionPantalla(int resultCode, Intent data) {
         if (resultCode != Activity.RESULT_OK || data == null) return;
 
+        // Asegurar limpieza previa antes de asignar una nueva proyección
+        detenerProyeccionPantalla();
+
         MediaProjectionManager projectionManager =
                 (MediaProjectionManager) getSystemService(Context.MEDIA_PROJECTION_SERVICE);
 
@@ -255,11 +253,9 @@ public class CameraService extends Service {
             MediaProjection mediaProjection = projectionManager.getMediaProjection(resultCode, data);
             if (mediaProjection != null) {
                 this.activeMediaProjection = mediaProjection;
-                if (screenCaptureController != null) {
-                    screenCaptureController.release();
-                }
                 screenCaptureController = new ScreenCaptureController(this, mediaProjection, webServer);
                 screenCaptureController.start();
+                Log.i("CameraService", "Nueva sesión de MediaProjection iniciada con éxito.");
             }
         }
     }
@@ -273,8 +269,14 @@ public class CameraService extends Service {
             screenCaptureController.release();
             screenCaptureController = null;
         }
-        this.activeMediaProjection = null;
+        if (activeMediaProjection != null) {
+            try {
+                activeMediaProjection.stop();
+            } catch (Exception ignored) {}
+            activeMediaProjection = null;
+        }
         actualizarNotificacionYServicio(false);
+        Log.i("CameraService", "Proyección de pantalla detenida y recursos liberados por completo.");
     }
 
     public synchronized void iniciarCamara() {
