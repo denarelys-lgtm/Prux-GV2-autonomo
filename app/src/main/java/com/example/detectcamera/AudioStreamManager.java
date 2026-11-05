@@ -22,7 +22,7 @@ public class AudioStreamManager {
     private static final int AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT;
 
     private AudioRecord audioRecord;
-    private boolean isRecording = false;
+    private volatile boolean isRecording = false; // Optimización con volatile para visibilidad de hilos
     private Thread recordingThread;
     private PipedOutputStream pipedOutputStream;
 
@@ -34,7 +34,6 @@ public class AudioStreamManager {
 
         try {
             if (modo == 2 && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && mediaProjection != null) {
-                // Modo 2: Captura de Audio Interno (WhatsApp / Tango / Llamadas / Sistema)
                 AudioPlaybackCaptureConfiguration config =
                         new AudioPlaybackCaptureConfiguration.Builder(mediaProjection)
                                 .addMatchingUsage(AudioAttributes.USAGE_MEDIA)
@@ -54,7 +53,6 @@ public class AudioStreamManager {
                         .setAudioPlaybackCaptureConfig(config)
                         .build();
             } else {
-                // Modo 1: Micrófono Ambiental
                 audioRecord = new AudioRecord(
                         MediaRecorder.AudioSource.MIC,
                         SAMPLE_RATE,
@@ -85,6 +83,9 @@ public class AudioStreamManager {
                         if (bytesRead > 0) {
                             pipedOutputStream.write(buffer, 0, bytesRead);
                             pipedOutputStream.flush();
+                        } else {
+                            // Pausa pasiva si no hay datos disponibles para liberar CPU
+                            try { Thread.sleep(20); } catch (InterruptedException ie) { break; }
                         }
                     }
                 } catch (Exception e) {
