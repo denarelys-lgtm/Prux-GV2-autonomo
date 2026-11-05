@@ -3,15 +3,14 @@ package com.example.detectcamera;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Log;
 
 import androidx.core.content.ContextCompat;
 
 import java.util.Set;
 
-/**
- * Arranque automático de Prux tras el reinicio.
- */
 public class BootReceiver extends BroadcastReceiver {
 
     private static final String TAG = "DetectCameraBoot";
@@ -35,50 +34,43 @@ public class BootReceiver extends BroadcastReceiver {
             return;
         }
 
-        Log.i(TAG, "Boot detectado (" + action + "). Iniciando Prux...");
+        Log.i(TAG, "Boot detectado (" + action + "). Programando inicio escalonado de Prux...");
 
         final Context appContext = context.getApplicationContext();
-
-        // Trabajo pesado fuera del hilo principal para no arriesgar ANR.
         final PendingResult pending = goAsync();
-        new Thread(() -> {
-            try {
-                startCoreServices(appContext);
-                startAdbAndPrivileges(appContext);
-                Log.i(TAG, "Servicios de Prux iniciados correctamente.");
-            } catch (Throwable t) {
-                Log.e(TAG, "Error iniciando Prux después del boot", t);
-            } finally {
-                pending.finish();
-            }
-        }, "Prux-Boot").start();
+
+        // Lanzamiento escalonado para no saturar la CPU justo después del arranque del sistema
+        new Handler(Looper.getMainLooper()).postDelayed(() -> {
+            new Thread(() -> {
+                try {
+                    startCoreServices(appContext);
+                    
+                    // Espera corta entre servicios para estabilizar memoria
+                    Thread.sleep(1500L);
+                    
+                    startAdbAndPrivileges(appContext);
+                    Log.i(TAG, "Servicios de Prux iniciados correctamente de forma escalonada.");
+                } catch (Throwable t) {
+                    Log.e(TAG, "Error iniciando Prux después del boot", t);
+                } finally {
+                    pending.finish();
+                }
+            }, "Prux-Boot").start();
+        }, 3000L); // 3 segundos de gracia para que el launcher cargue fluido
     }
 
-    // ------------------------------------------------------------------
-    // Servicios foreground
-    // ------------------------------------------------------------------
-
     private void startCoreServices(Context context) {
-        // 1. Servidor web
         ContextCompat.startForegroundService(
                 context,
                 new Intent(context, ServerService.class));
 
-        // 2. Cámara / audio
         ContextCompat.startForegroundService(
                 context,
                 new Intent(context, CameraService.class));
     }
 
-    // ------------------------------------------------------------------
-    // Motor ADB + privilegios
-    // ------------------------------------------------------------------
-
     private void startAdbAndPrivileges(Context context) {
         PruxAdbEngine engine = PruxAdbEngine.get(context);
-
-        // El monitor persistente ya se encarga de reconectar.
-        // Aquí solo hacemos un intento eager para aplicar privilegios cuanto antes.
         engine.startPersistentMonitoring();
 
         engine.reconnect((success, message) -> {
@@ -90,15 +82,9 @@ public class BootReceiver extends BroadcastReceiver {
             Log.i(TAG, "ADB conectado tras el boot. Otorgando permisos de pantalla...");
 
             try {
-                // Exenciones de ahorro de batería en segundo plano
                 PruxPrivilegedBridge.applyBackgroundExemptions(context);
-
-                // Conceder permiso de captura de pantalla por ADB
                 PruxPrivilegedBridge.prepareMediaProjection(context);
-
-                // Lanza la actividad transparente para inicializar el MediaProjection
                 PruxPrivilegedBridge.startProjectionActivity(context);
-
             } catch (Throwable t) {
                 Log.e(TAG, "Error aplicando privilegios tras ADB", t);
             }
