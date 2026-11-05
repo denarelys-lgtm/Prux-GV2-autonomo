@@ -93,7 +93,8 @@ public class WebServer extends NanoHTTPD {
                     actualizarFramePantalla(frameJpeg);
                 }
                 try {
-                    Thread.sleep(60);
+                    // Optimización: Intervalo de pausa pasiva eficiente para liberar CPU
+                    Thread.sleep(100); 
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     break;
@@ -125,9 +126,7 @@ public class WebServer extends NanoHTTPD {
                 if (partes.length == 2) {
                     return usuarioValido.equals(partes[0]) && passwordValida.equals(partes[1]);
                 }
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
+            } catch (Exception ignored) {}
         }
         return false;
     }
@@ -193,7 +192,8 @@ public class WebServer extends NanoHTTPD {
                         }
 
                         try {
-                            frameLock.wait(1000L);
+                            // Espera pasiva inteligente que no consume CPU hasta recibir un nuevo frame
+                            frameLock.wait(2000L);
                         } catch (InterruptedException e) {
                             Thread.currentThread().interrupt();
                             return false;
