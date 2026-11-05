@@ -22,7 +22,7 @@ public final class ScreenCaptureController {
     private static final String TAG = "ScreenCapture";
     private static final String DISPLAY_NAME = "Prux-WebServer-Display";
     private static final int MAX_WIDTH = 1280;
-    private static final int JPEG_QUALITY = 50; // Ligeramente optimizado para reducir uso de CPU y red
+    private static final int JPEG_QUALITY = 50;
 
     private final Context context;
     private final WebServer webServer;
@@ -88,7 +88,7 @@ public final class ScreenCaptureController {
     }
 
     private void createImageReader() {
-        imageReader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2); // Reducido el búfer a 2 para menor latencia y uso de memoria
+        imageReader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2);
         imageReader.setOnImageAvailableListener(this::onImageAvailable, captureHandler);
     }
 
